@@ -1,4 +1,4 @@
-// librarywidget.h - Version 1.0
+// librarywidget.h - Version 1.2
 #ifndef LIBRARYWIDGET_H
 #define LIBRARYWIDGET_H
 
@@ -10,11 +10,6 @@ class LibraryWidget : public QListWidget
 public:
     explicit LibraryWidget(QWidget *parent = nullptr);
 
-signals:
-    void itemsMoved();
-
-protected:
-    void dropEvent(QDropEvent *event) override;
 };
 
 #endif // LIBRARYWIDGET_H

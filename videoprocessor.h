@@ -1,50 +1,67 @@
-// videoprocessor.h - Version 1.3
+// videoprocessor.h - Version 1.4
 #ifndef VIDEOPROCESSOR_H
 #define VIDEOPROCESSOR_H
 
 #include <QString>
 #include <QImage>
+#include <QByteArray>
 
-// FFmpeg headers must be wrapped in extern "C" for C++ compatibility
 extern "C" {
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
 #include <libswscale/swscale.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/time.h>
+#include <libswresample/swresample.h>
+#include <libavutil/opt.h>
+#include <libavutil/channel_layout.h>
 }
 
 struct FrameData {
     QImage image;
-    int64_t pts = 0; // Presentation timestamp
+    QByteArray audioData;
+    int64_t pts = 0;
 };
 
 class VideoProcessor
 {
 public:
+    struct AudioParams {
+        bool isValid = false;
+        int sample_rate = 0;
+        int channels = 0;
+    };
+
     VideoProcessor();
     ~VideoProcessor();
 
     bool openFile(const QString &filePath);
     FrameData decodeNextFrame();
-    FrameData seekAndDecode(int64_t timestamp); // Hàm mới
+    FrameData seekAndDecode(int64_t timestamp);
 
-    // Getters
     int64_t getDuration() const;
     AVRational getTimeBase() const;
-    double getFrameRate() const; // Hàm mới
+    double getFrameRate() const;
+    AudioParams getAudioParams() const;
 
 private:
     void cleanup();
     QImage convertFrameToImage(AVFrame* frame);
-    bool seek(int64_t timestamp); // Chuyển thành private
+    QByteArray resampleAudioFrame(AVFrame* frame);
+    bool seek(int64_t timestamp);
 
     AVFormatContext *formatContext = nullptr;
-    AVCodecContext *codecContext = nullptr;
-    const AVCodec *codec = nullptr;
+    // Video
+    AVCodecContext *videoCodecContext = nullptr;
+    const AVCodec *videoCodec = nullptr;
     SwsContext *swsContext = nullptr;
-
     int videoStreamIndex = -1;
+    // Audio
+    AVCodecContext *audioCodecContext = nullptr;
+    const AVCodec *audioCodec = nullptr;
+    SwrContext *swrContext = nullptr;
+    int audioStreamIndex = -1;
+    AudioParams m_audioParams;
 };
 
 #endif // VIDEOPROCESSOR_H

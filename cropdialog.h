@@ -1,4 +1,4 @@
-// cropdialog.h - Version 2.6
+// cropdialog.h - Version 2.8
 #ifndef CROPDIALOG_H
 #define CROPDIALOG_H
 
@@ -12,46 +12,15 @@
 #include <QPainterPath>
 #include <QUndoStack>
 
-class CropArea : public QWidget
-{
-    Q_OBJECT
-public:
-    enum Handle { None, TopLeft, Top, TopRight, Right, BottomRight, Bottom, BottomLeft, Left, Move };
-
-    explicit CropArea(QWidget *parent = nullptr);
-    QRect getSelection() const;
-    void setImage(const QImage &image); // Cần public để cập nhật ảnh sau khi cắt
-
-public slots:
-    void setAspectRatio(double ratio);
-    void setScale(double newScale);
-    void clearSelection();
-
-protected:
-    void paintEvent(QPaintEvent *event) override;
-    void mousePressEvent(QMouseEvent *event) override;
-    void mouseMoveEvent(QMouseEvent *event) override;
-    void mouseReleaseEvent(QMouseEvent *event) override;
-    void wheelEvent(QWheelEvent *event) override;
-
-private:
-    void updateCursor(const QPointF &pos);
-    void resizeSelection(const QPointF &pos);
-    Handle getHandleAt(const QPointF &pos) const;
-    QRectF getHandleRect(Handle handle) const;
-
-    QImage m_image;
-    QRectF m_selectionRect;
-    Handle m_currentHandle = None;
-    QPointF m_dragStartPos;
-    double m_aspectRatio = 0.0;
-    double m_scale = 1.0;
-};
-
+// Forward declarations
+class CropArea;
 class QScrollArea;
 class QButtonGroup;
 class QPushButton;
 class QAction;
+class QLineEdit;
+class QSpinBox;
+class QRadioButton; // SỬA LỖI: Thêm forward declaration
 
 class CropDialog : public QDialog
 {
@@ -59,7 +28,7 @@ class CropDialog : public QDialog
 
 public:
     explicit CropDialog(const QImage &image, QWidget *parent = nullptr);
-    QImage getFinalImage() const; // Đổi tên để rõ nghĩa hơn
+    QImage getFinalImage() const;
 
 signals:
     void exportImageRequested(const QImage &image);
@@ -70,10 +39,11 @@ protected:
 
 private slots:
     void onAspectRatioChanged(int id, bool checked);
+    void updateCustomAspectRatio();
     void fitToWindow();
     void oneToOne();
-    void applyCrop(); // Slot mới cho phím Enter
-    void exportImage(); // Slot mới cho nút "Xuất ảnh"
+    void applyCrop();
+    void exportImage();
 
 private:
     void setupUi();
@@ -81,9 +51,13 @@ private:
     CropArea *m_cropArea;
     QScrollArea *m_scrollArea;
     QButtonGroup *m_ratioGroup;
-    QImage m_currentImage; // Ảnh đang được chỉnh sửa
+    QImage m_currentImage;
 
-    // Chức năng Undo/Redo cho thao tác cắt
+    QWidget *m_customRatioWidget;
+    QRadioButton *m_customRatioRadio;
+    QSpinBox *m_customWidthSpinBox;
+    QSpinBox *m_customHeightSpinBox;
+
     QUndoStack *m_undoStack;
     QAction *m_undoAction;
     QAction *m_redoAction;

@@ -1,4 +1,4 @@
-// cropdialog.cpp - Version 2.8
+// cropdialog.cpp - Version 3.1 (Sửa lỗi thứ tự định nghĩa)
 #include "cropdialog.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -17,40 +17,12 @@
 #include <QUndoCommand>
 #include <QIcon>
 #include <QStyle>
+#include <QLabel>
+#include <QSpinBox>
 
-// --- Lớp Command cho Undo/Redo thao tác cắt ảnh ---
-class ApplyCropCommand : public QUndoCommand
-{
-public:
-    ApplyCropCommand(QImage *imageContainer, CropArea *cropArea, const QImage &oldImage, const QImage &newImage, QUndoCommand *parent = nullptr)
-        : QUndoCommand(parent), m_imageContainer(imageContainer), m_cropArea(cropArea), m_oldImage(oldImage), m_newImage(newImage)
-    {
-        setText("Cắt ảnh");
-    }
+// --- SỬA LỖI: Chuyển toàn bộ phần triển khai của CropArea lên trước ---
 
-    void undo() override {
-        *m_imageContainer = m_oldImage;
-        m_cropArea->setImage(m_oldImage);
-        m_cropArea->clearSelection();
-    }
-
-    void redo() override {
-        *m_imageContainer = m_newImage;
-        m_cropArea->setImage(m_newImage);
-        m_cropArea->clearSelection();
-    }
-
-private:
-    QImage *m_imageContainer; // Con trỏ tới m_currentImage của Dialog
-    CropArea *m_cropArea;
-    QImage m_oldImage;
-    QImage m_newImage;
-};
-
-
-// --- Triển khai CropArea ---
-CropArea::CropArea(QWidget *parent)
-    : QWidget(parent)
+CropArea::CropArea(QWidget *parent) : QWidget(parent)
 {
     setMouseTracking(true);
     m_selectionRect = QRectF();
@@ -74,13 +46,11 @@ void CropArea::clearSelection()
     update();
 }
 
-// ... (Các hàm còn lại của CropArea không thay đổi nhiều) ...
 void CropArea::setAspectRatio(double ratio)
 {
     m_aspectRatio = ratio;
     if (m_aspectRatio > 0 && m_selectionRect.isValid()) {
-        double currentHeight = m_selectionRect.width() / m_aspectRatio;
-        m_selectionRect.setHeight(currentHeight);
+        m_selectionRect.setHeight(m_selectionRect.width() / m_aspectRatio);
     }
     update();
 }
@@ -241,13 +211,43 @@ QRectF CropArea::getHandleRect(Handle handle) const
     return QRectF(center.x() - size/2, center.y() - size/2, size, size);
 }
 
+
+// --- Lớp Command cho Undo/Redo thao tác cắt ảnh ---
+class ApplyCropCommand : public QUndoCommand
+{
+public:
+    ApplyCropCommand(QImage *imageContainer, CropArea *cropArea, const QImage &oldImage, const QImage &newImage, QUndoCommand *parent = nullptr)
+        : QUndoCommand(parent), m_imageContainer(imageContainer), m_cropArea(cropArea), m_oldImage(oldImage), m_newImage(newImage)
+    {
+        setText("Cắt ảnh");
+    }
+
+    void undo() override {
+        *m_imageContainer = m_oldImage;
+        m_cropArea->setImage(m_oldImage);
+        m_cropArea->clearSelection();
+    }
+
+    void redo() override {
+        *m_imageContainer = m_newImage;
+        m_cropArea->setImage(m_newImage);
+        m_cropArea->clearSelection();
+    }
+
+private:
+    QImage *m_imageContainer;
+    CropArea *m_cropArea;
+    QImage m_oldImage;
+    QImage m_newImage;
+};
+
 // --- Triển khai CropDialog ---
 CropDialog::CropDialog(const QImage &image, QWidget *parent)
     : QDialog(parent), m_currentImage(image)
 {
     setupUi();
     m_cropArea->setImage(m_currentImage);
-    setWindowTitle("Cắt ảnh & Chỉnh sửa");
+    setWindowTitle("Xem");
     resize(800, 600);
 }
 
@@ -258,7 +258,6 @@ QImage CropDialog::getFinalImage() const
 
 void CropDialog::keyPressEvent(QKeyEvent *event)
 {
-    // --- YÊU CẦU MỚI: Enter chỉ áp dụng cắt ---
     if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
         applyCrop();
     } else {
@@ -275,9 +274,9 @@ void CropDialog::showEvent(QShowEvent *event)
 void CropDialog::setupUi()
 {
     m_undoStack = new QUndoStack(this);
-    m_undoAction = m_undoStack->createUndoAction(this, "Hoàn tác");
+    m_undoAction = m_undoStack->createUndoAction(this, "Hoàn tác cắt");
     m_undoAction->setShortcut(QKeySequence::Undo);
-    m_redoAction = m_undoStack->createRedoAction(this, "Làm lại");
+    m_redoAction = m_undoStack->createRedoAction(this, "Làm lại cắt");
     m_redoAction->setShortcut(QKeySequence::Redo);
     this->addActions({m_undoAction, m_redoAction});
 
@@ -292,26 +291,46 @@ void CropDialog::setupUi()
     m_scrollArea->setWidget(m_cropArea);
     mainLayout->addWidget(m_scrollArea, 1);
 
-    QHBoxLayout *controlsLayout = new QHBoxLayout();
     QGroupBox *ratioBox = new QGroupBox("Tỉ lệ");
     ratioBox->setToolTip("Chọn tỉ lệ khung hình cho vùng cắt");
-    QHBoxLayout *ratioLayout = new QHBoxLayout();
+    QVBoxLayout *ratioVLayout = new QVBoxLayout(ratioBox);
+    QHBoxLayout *ratioHLayout = new QHBoxLayout();
     m_ratioGroup = new QButtonGroup(this);
-    m_ratioGroup->setExclusive(false);
+    m_ratioGroup->setExclusive(true);
     QRadioButton *freeformRadio = new QRadioButton("Tự do");
     QRadioButton *ratio11 = new QRadioButton("1:1");
     QRadioButton *ratio43 = new QRadioButton("4:3");
     QRadioButton *ratio169 = new QRadioButton("16:9");
+    m_customRatioRadio = new QRadioButton("Tuỳ chỉnh");
     m_ratioGroup->addButton(freeformRadio, 0);
     m_ratioGroup->addButton(ratio11, 1);
     m_ratioGroup->addButton(ratio43, 2);
     m_ratioGroup->addButton(ratio169, 3);
-    ratioLayout->addWidget(freeformRadio);
-    ratioLayout->addWidget(ratio11);
-    ratioLayout->addWidget(ratio43);
-    ratioLayout->addWidget(ratio169);
-    ratioBox->setLayout(ratioLayout);
+    m_ratioGroup->addButton(m_customRatioRadio, 4);
+    ratioHLayout->addWidget(freeformRadio);
+    ratioHLayout->addWidget(ratio11);
+    ratioHLayout->addWidget(ratio43);
+    ratioHLayout->addWidget(ratio169);
+    ratioHLayout->addWidget(m_customRatioRadio);
+    ratioVLayout->addLayout(ratioHLayout);
 
+    m_customRatioWidget = new QWidget();
+    QHBoxLayout *customLayout = new QHBoxLayout(m_customRatioWidget);
+    customLayout->setContentsMargins(0, 5, 0, 0);
+    m_customWidthSpinBox = new QSpinBox();
+    m_customWidthSpinBox->setRange(1, 9999); m_customWidthSpinBox->setValue(1920);
+    m_customHeightSpinBox = new QSpinBox();
+    m_customHeightSpinBox->setRange(1, 9999); m_customHeightSpinBox->setValue(1080);
+    customLayout->addWidget(new QLabel("Kích thước:"));
+    customLayout->addWidget(m_customWidthSpinBox);
+    customLayout->addWidget(new QLabel("x"));
+    customLayout->addWidget(m_customHeightSpinBox);
+    customLayout->addStretch();
+    ratioVLayout->addWidget(m_customRatioWidget);
+    m_customRatioWidget->setVisible(false);
+    freeformRadio->setChecked(true);
+
+    QHBoxLayout *controlsLayout = new QHBoxLayout();
     QPushButton *fitButton = new QPushButton("Phóng");
     fitButton->setToolTip("Thu phóng ảnh vừa với khung xem");
     QPushButton *oneToOneButton = new QPushButton("1:1");
@@ -324,7 +343,6 @@ void CropDialog::setupUi()
     mainLayout->addLayout(controlsLayout);
 
     QDialogButtonBox *buttonBox = new QDialogButtonBox();
-    // --- YÊU CẦU MỚI: Sắp xếp lại nút ---
     QPushButton* okButton = buttonBox->addButton("OK", QDialogButtonBox::AcceptRole);
     okButton->setToolTip("Chấp nhận ảnh đã chỉnh sửa và đóng cửa sổ");
     buttonBox->addButton(QDialogButtonBox::Cancel);
@@ -332,13 +350,14 @@ void CropDialog::setupUi()
     exportButton->setToolTip("Lưu ảnh hiện tại ra file và đóng cửa sổ");
     exportButton->setStyleSheet("background-color: #e67e22; color: white; border: none; padding: 5px; border-radius: 3px;");
     buttonBox->addButton(exportButton, QDialogButtonBox::ActionRole);
-    
-    okButton->setDefault(false); // Enter không còn kích hoạt nút OK
+    okButton->setDefault(false);
     
     connect(m_ratioGroup, &QButtonGroup::idToggled, this, &CropDialog::onAspectRatioChanged);
+    connect(m_customWidthSpinBox, &QSpinBox::valueChanged, this, &CropDialog::updateCustomAspectRatio);
+    connect(m_customHeightSpinBox, &QSpinBox::valueChanged, this, &CropDialog::updateCustomAspectRatio);
     connect(fitButton, &QPushButton::clicked, this, &CropDialog::fitToWindow);
     connect(oneToOneButton, &QPushButton::clicked, this, &CropDialog::oneToOne);
-    connect(okButton, &QPushButton::clicked, this, &QDialog::accept); // OK chỉ đóng
+    connect(okButton, &QPushButton::clicked, this, &QDialog::accept);
     connect(exportButton, &QPushButton::clicked, this, &CropDialog::exportImage);
     connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
     mainLayout->addWidget(buttonBox);
@@ -346,21 +365,27 @@ void CropDialog::setupUi()
 
 void CropDialog::onAspectRatioChanged(int id, bool checked)
 {
-    if (!checked) {
-        if (m_ratioGroup->checkedId() == -1) {
-             m_ratioGroup->setExclusive(false);
-             m_cropArea->setAspectRatio(0.0);
-        }
-        return;
-    }
-    m_ratioGroup->setExclusive(true);
-    m_ratioGroup->button(id)->setChecked(true);
+    if (!checked) return;
+    
+    m_customRatioWidget->setVisible(id == 4);
 
     switch(id) {
         case 0: m_cropArea->setAspectRatio(0.0); break;
         case 1: m_cropArea->setAspectRatio(1.0); break;
         case 2: m_cropArea->setAspectRatio(4.0/3.0); break;
         case 3: m_cropArea->setAspectRatio(16.0/9.0); break;
+        case 4: updateCustomAspectRatio(); break;
+    }
+}
+
+void CropDialog::updateCustomAspectRatio()
+{
+    if (m_customRatioRadio->isChecked()) {
+        double w = m_customWidthSpinBox->value();
+        double h = m_customHeightSpinBox->value();
+        if (h > 0) {
+            m_cropArea->setAspectRatio(w / h);
+        }
     }
 }
 
@@ -387,14 +412,11 @@ void CropDialog::applyCrop()
     }
     QImage oldImage = m_currentImage;
     QImage newImage = oldImage.copy(selection);
-
-    // Thêm vào undo stack
     m_undoStack->push(new ApplyCropCommand(&m_currentImage, m_cropArea, oldImage, newImage));
-    // redo() được tự động gọi khi push, nên ảnh đã được cập nhật
 }
 
 void CropDialog::exportImage()
 {
     emit exportImageRequested(m_currentImage);
-    accept(); // Đóng dialog sau khi yêu cầu export
+    accept();
 }

@@ -1,4 +1,4 @@
-// mainwindow.h - Version 2.6
+// mainwindow.h - Version 2.9
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
@@ -26,6 +26,8 @@ class LibraryItemDelegate;
 class QSpinBox;
 class QComboBox;
 class QLineEdit;
+class QAudioSink;
+class QIODevice;
 
 class MainWindow : public QMainWindow
 {
@@ -50,6 +52,8 @@ private slots:
     void onTimelineReleased();
     void updateFrame();
     void onCapture();
+    void onMuteClicked();
+    void onVolumeChanged(int volume);
 
     // Library Panel
     void onLibrarySelectionChanged();
@@ -57,14 +61,13 @@ private slots:
     void onDeleteSelected();
 
     // View Panel
-    void onLibraryItemsMoved();
     void onLibraryItemChanged(QListWidgetItem *item);
     void onViewPanelCrop();
     void onStyleChanged();
 
     // Export Panel
     void onExport();
-    void onExportImage(const QImage& image); // Slot mới để xử lý export từ dialog
+    void onExportImage(const QImage& image);
     void onChooseSavePath();
     void onOpenSaveFolder();
 
@@ -77,6 +80,7 @@ private:
     void updateUIWithFrame(const FrameData& frameData);
     QString formatTime(int64_t timeUs);
     void updateAllLibraryItemIndices();
+    void cleanupAudio();
 
     // Layout
     QSplitter *mainSplitter;
@@ -91,6 +95,13 @@ private:
     QPushButton *m_captureButton;
     QSlider *m_timelineSlider;
     QLabel *m_timeLabel;
+    QPushButton *m_muteButton;
+    QSlider *m_volumeSlider;
+    
+    // Audio
+    QAudioSink *m_audioSink = nullptr;
+    QIODevice *m_audioDevice = nullptr;
+    float m_lastVolume = 1.0f; // SỬA LỖI: Lưu âm lượng trước khi tắt tiếng
 
     // Right Panel Components
     LibraryWidget *m_libraryWidget;
