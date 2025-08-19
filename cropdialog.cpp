@@ -1,4 +1,4 @@
-// cropdialog.cpp - Version 2.4
+// cropdialog.cpp - Version 2.8
 #include "cropdialog.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -11,14 +11,56 @@
 #include <QButtonGroup>
 #include <QShowEvent>
 #include <QMessageBox>
+#include <QKeyEvent>
+#include <QToolBar>
+#include <QAction>
+#include <QUndoCommand>
+#include <QIcon>
+#include <QStyle>
+
+// --- Lớp Command cho Undo/Redo thao tác cắt ảnh ---
+class ApplyCropCommand : public QUndoCommand
+{
+public:
+    ApplyCropCommand(QImage *imageContainer, CropArea *cropArea, const QImage &oldImage, const QImage &newImage, QUndoCommand *parent = nullptr)
+        : QUndoCommand(parent), m_imageContainer(imageContainer), m_cropArea(cropArea), m_oldImage(oldImage), m_newImage(newImage)
+    {
+        setText("Cắt ảnh");
+    }
+
+    void undo() override {
+        *m_imageContainer = m_oldImage;
+        m_cropArea->setImage(m_oldImage);
+        m_cropArea->clearSelection();
+    }
+
+    void redo() override {
+        *m_imageContainer = m_newImage;
+        m_cropArea->setImage(m_newImage);
+        m_cropArea->clearSelection();
+    }
+
+private:
+    QImage *m_imageContainer; // Con trỏ tới m_currentImage của Dialog
+    CropArea *m_cropArea;
+    QImage m_oldImage;
+    QImage m_newImage;
+};
+
 
 // --- Triển khai CropArea ---
-CropArea::CropArea(const QImage &image, QWidget *parent)
-    : QWidget(parent), m_image(image)
+CropArea::CropArea(QWidget *parent)
+    : QWidget(parent)
 {
     setMouseTracking(true);
     m_selectionRect = QRectF();
+}
+
+void CropArea::setImage(const QImage &image)
+{
+    m_image = image;
     setFixedSize(m_image.size());
+    update();
 }
 
 QRect CropArea::getSelection() const
@@ -26,6 +68,13 @@ QRect CropArea::getSelection() const
     return m_selectionRect.isValid() ? m_selectionRect.normalized().toRect() : QRect();
 }
 
+void CropArea::clearSelection()
+{
+    m_selectionRect = QRectF();
+    update();
+}
+
+// ... (Các hàm còn lại của CropArea không thay đổi nhiều) ...
 void CropArea::setAspectRatio(double ratio)
 {
     m_aspectRatio = ratio;
@@ -39,13 +88,17 @@ void CropArea::setAspectRatio(double ratio)
 void CropArea::setScale(double newScale)
 {
     m_scale = newScale;
-    setFixedSize(m_image.size() * m_scale);
+    if(!m_image.isNull()) {
+        setFixedSize(m_image.size() * m_scale);
+    }
     update();
 }
 
 void CropArea::paintEvent(QPaintEvent *event)
 {
     Q_UNUSED(event);
+    if(m_image.isNull()) return;
+
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
     painter.setRenderHint(QPainter::SmoothPixmapTransform);
@@ -190,16 +243,27 @@ QRectF CropArea::getHandleRect(Handle handle) const
 
 // --- Triển khai CropDialog ---
 CropDialog::CropDialog(const QImage &image, QWidget *parent)
-    : QDialog(parent), m_sourceImage(image)
+    : QDialog(parent), m_currentImage(image)
 {
     setupUi();
-    setWindowTitle("Cắt ảnh");
+    m_cropArea->setImage(m_currentImage);
+    setWindowTitle("Cắt ảnh & Chỉnh sửa");
     resize(800, 600);
 }
 
-QImage CropDialog::getCroppedImage() const
+QImage CropDialog::getFinalImage() const
 {
-    return m_croppedImage;
+    return m_currentImage;
+}
+
+void CropDialog::keyPressEvent(QKeyEvent *event)
+{
+    // --- YÊU CẦU MỚI: Enter chỉ áp dụng cắt ---
+    if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
+        applyCrop();
+    } else {
+        QDialog::keyPressEvent(event);
+    }
 }
 
 void CropDialog::showEvent(QShowEvent *event)
@@ -208,25 +272,29 @@ void CropDialog::showEvent(QShowEvent *event)
     fitToWindow();
 }
 
-void CropDialog::keyPressEvent(QKeyEvent *event)
-{
-    if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
-        acceptCrop();
-    } else {
-        QDialog::keyPressEvent(event);
-    }
-}
-
 void CropDialog::setupUi()
 {
+    m_undoStack = new QUndoStack(this);
+    m_undoAction = m_undoStack->createUndoAction(this, "Hoàn tác");
+    m_undoAction->setShortcut(QKeySequence::Undo);
+    m_redoAction = m_undoStack->createRedoAction(this, "Làm lại");
+    m_redoAction->setShortcut(QKeySequence::Redo);
+    this->addActions({m_undoAction, m_redoAction});
+
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
-    m_cropArea = new CropArea(m_sourceImage, this);
+    QToolBar *toolBar = new QToolBar(this);
+    toolBar->addAction(m_undoAction);
+    toolBar->addAction(m_redoAction);
+    mainLayout->addWidget(toolBar);
+
+    m_cropArea = new CropArea(this);
     m_scrollArea = new QScrollArea(this);
     m_scrollArea->setWidget(m_cropArea);
     mainLayout->addWidget(m_scrollArea, 1);
 
     QHBoxLayout *controlsLayout = new QHBoxLayout();
     QGroupBox *ratioBox = new QGroupBox("Tỉ lệ");
+    ratioBox->setToolTip("Chọn tỉ lệ khung hình cho vùng cắt");
     QHBoxLayout *ratioLayout = new QHBoxLayout();
     m_ratioGroup = new QButtonGroup(this);
     m_ratioGroup->setExclusive(false);
@@ -245,7 +313,9 @@ void CropDialog::setupUi()
     ratioBox->setLayout(ratioLayout);
 
     QPushButton *fitButton = new QPushButton("Phóng");
+    fitButton->setToolTip("Thu phóng ảnh vừa với khung xem");
     QPushButton *oneToOneButton = new QPushButton("1:1");
+    oneToOneButton->setToolTip("Xem ảnh với kích thước thật");
 
     controlsLayout->addWidget(ratioBox);
     controlsLayout->addStretch();
@@ -254,13 +324,22 @@ void CropDialog::setupUi()
     mainLayout->addLayout(controlsLayout);
 
     QDialogButtonBox *buttonBox = new QDialogButtonBox();
-    buttonBox->addButton("Xuất", QDialogButtonBox::AcceptRole);
+    // --- YÊU CẦU MỚI: Sắp xếp lại nút ---
+    QPushButton* okButton = buttonBox->addButton("OK", QDialogButtonBox::AcceptRole);
+    okButton->setToolTip("Chấp nhận ảnh đã chỉnh sửa và đóng cửa sổ");
     buttonBox->addButton(QDialogButtonBox::Cancel);
-
+    QPushButton *exportButton = new QPushButton("Xuất ảnh");
+    exportButton->setToolTip("Lưu ảnh hiện tại ra file và đóng cửa sổ");
+    exportButton->setStyleSheet("background-color: #e67e22; color: white; border: none; padding: 5px; border-radius: 3px;");
+    buttonBox->addButton(exportButton, QDialogButtonBox::ActionRole);
+    
+    okButton->setDefault(false); // Enter không còn kích hoạt nút OK
+    
     connect(m_ratioGroup, &QButtonGroup::idToggled, this, &CropDialog::onAspectRatioChanged);
     connect(fitButton, &QPushButton::clicked, this, &CropDialog::fitToWindow);
     connect(oneToOneButton, &QPushButton::clicked, this, &CropDialog::oneToOne);
-    connect(buttonBox, &QDialogButtonBox::accepted, this, &CropDialog::acceptCrop);
+    connect(okButton, &QPushButton::clicked, this, &QDialog::accept); // OK chỉ đóng
+    connect(exportButton, &QPushButton::clicked, this, &CropDialog::exportImage);
     connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
     mainLayout->addWidget(buttonBox);
 }
@@ -287,8 +366,9 @@ void CropDialog::onAspectRatioChanged(int id, bool checked)
 
 void CropDialog::fitToWindow()
 {
-    double w_ratio = (double)m_scrollArea->width() / (m_sourceImage.width() + 10);
-    double h_ratio = (double)m_scrollArea->height() / (m_sourceImage.height() + 10);
+    if(m_currentImage.isNull()) return;
+    double w_ratio = (double)m_scrollArea->width() / (m_currentImage.width() + 10);
+    double h_ratio = (double)m_scrollArea->height() / (m_currentImage.height() + 10);
     double scale = qMin(w_ratio, h_ratio);
     m_cropArea->setScale(scale);
 }
@@ -298,13 +378,23 @@ void CropDialog::oneToOne()
     m_cropArea->setScale(1.0);
 }
 
-void CropDialog::acceptCrop()
+void CropDialog::applyCrop()
 {
     QRect selection = m_cropArea->getSelection();
     if (!selection.isValid() || selection.isEmpty()) {
-        QMessageBox::warning(this, "Lỗi", "Vui lòng vẽ một vùng chọn trước khi xuất.");
+        QMessageBox::warning(this, "Lỗi", "Vui lòng vẽ một vùng chọn trước khi nhấn Enter.");
         return;
     }
-    m_croppedImage = m_sourceImage.copy(selection);
-    accept();
+    QImage oldImage = m_currentImage;
+    QImage newImage = oldImage.copy(selection);
+
+    // Thêm vào undo stack
+    m_undoStack->push(new ApplyCropCommand(&m_currentImage, m_cropArea, oldImage, newImage));
+    // redo() được tự động gọi khi push, nên ảnh đã được cập nhật
+}
+
+void CropDialog::exportImage()
+{
+    emit exportImageRequested(m_currentImage);
+    accept(); // Đóng dialog sau khi yêu cầu export
 }

@@ -1,4 +1,4 @@
-// viewpanel.cpp - Version 1.5
+// viewpanel.cpp - Version 1.6
 #include "viewpanel.h"
 #include <QPainter>
 #include <QtMath>
@@ -27,10 +27,29 @@ void ViewPanel::setSpacing(int spacing)
     update();
 }
 
-void ViewPanel::setScale(int scalePercent)
+void ViewPanel::setScale(double newScale)
 {
-    m_scale = qBound(0.1, scalePercent / 100.0, 2.0);
+    m_scale = qBound(0.1, newScale, 5.0); // Giới hạn scale
     update();
+}
+
+void ViewPanel::fitToWindow()
+{
+    QSize totalSize = calculateTotalSize();
+    if (!totalSize.isValid() || totalSize.isEmpty()) {
+        setScale(1.0);
+        return;
+    }
+
+    double scaleX = (double)this->width() / totalSize.width();
+    double scaleY = (double)this->height() / totalSize.height();
+    double fitScale = qMin(scaleX, scaleY);
+    setScale(fitScale);
+}
+
+void ViewPanel::setOneToOne()
+{
+    setScale(1.0);
 }
 
 QImage ViewPanel::getCompositedImage() const
@@ -65,6 +84,7 @@ QImage ViewPanel::getCompositedImage() const
         }
     } else { // Grid
         int cols = findBestColumnCount();
+        if (cols == 0) return QImage();
         int current_col = 0;
 
         for (const QImage &image : m_images) {
@@ -95,43 +115,35 @@ void ViewPanel::paintEvent(QPaintEvent *event)
         return;
     }
 
-    QSize totalSize = calculateTotalSize();
-    if (!totalSize.isValid()) return;
-
-    double fitScale = 1.0;
-    if (totalSize.width() > this->width() || totalSize.height() > this->height()) {
-        double scaleX = (double)this->width() / totalSize.width();
-        double scaleY = (double)this->height() / totalSize.height();
-        fitScale = qMin(scaleX, scaleY);
-    }
-
-    double finalScale = fitScale * m_scale;
-    painter.scale(finalScale, finalScale);
-
     QImage compositedImage = getCompositedImage();
-    painter.drawImage(0, 0, compositedImage);
+    if (compositedImage.isNull()) return;
+
+    // Center the image
+    QSize scaledSize = compositedImage.size() * m_scale;
+    int x = (this->width() - scaledSize.width()) / 2;
+    int y = (this->height() - scaledSize.height()) / 2;
+
+    painter.drawImage(QRect(x, y, scaledSize.width(), scaledSize.height()), compositedImage);
 }
 
 void ViewPanel::wheelEvent(QWheelEvent *event)
 {
-    int delta = event->angleDelta().y();
-    int newScale = m_scale * 100 + (delta > 0 ? 10 : -10);
-    newScale = qBound(10, newScale, 200);
-
+    double newScale = m_scale + (event->angleDelta().y() > 0 ? 0.1 : -0.1);
     setScale(newScale);
-    emit scaleChanged(newScale);
 }
 
-// SỬA LỖI: Thêm ViewPanel:: để định nghĩa hàm là thành viên của lớp
 int ViewPanel::findBestColumnCount() const
 {
-    if (m_images.isEmpty()) return 1;
+    if (m_images.isEmpty()) return 0;
+
+    // Giả định tất cả ảnh có cùng kích thước
+    if (m_images[0].height() == 0) return 1;
+    double imageAspectRatio = (double)m_images[0].width() / m_images[0].height();
 
     const double targetAspectRatio = 16.0 / 9.0;
     double bestDiff = std::numeric_limits<double>::max();
     int bestCols = 1;
     int imageCount = m_images.count();
-    double imageAspectRatio = (double)m_images[0].width() / m_images[0].height();
 
     for (int cols = 1; cols <= imageCount; ++cols) {
         int rows = qCeil((double)imageCount / cols);
@@ -173,9 +185,10 @@ QSize ViewPanel::calculateTotalSize() const
         totalWidth = maxWidth + 2 * m_spacing;
     } else { // Grid
         int cols = findBestColumnCount();
+        if (cols == 0) return {0,0};
         int rows = qCeil((double)m_images.count() / cols);
         if (rows == 0) return {0,0};
-        
+
         int imageWidth = m_images[0].width();
         int imageHeight = m_images[0].height();
 

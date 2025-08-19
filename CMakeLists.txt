@@ -1,7 +1,7 @@
-# CMakeLists.txt - Version 1.7
+# CMakeLists.txt - Version 2.1
 # --- Cài đặt CMake tối thiểu và thông tin dự án ---
 cmake_minimum_required(VERSION 3.16)
-project(FrameCapture VERSION 1.0 LANGUAGES CXX)
+project(FrameCapture VERSION 1.1 LANGUAGES CXX)
 
 # --- Cài đặt chuẩn C++ ---
 set(CMAKE_CXX_STANDARD 17)
@@ -12,16 +12,22 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
+# CMake sẽ tìm Qt6 bằng cách sử dụng CMAKE_PREFIX_PATH được cung cấp
+# khi bạn cấu hình dự án (ví dụ: trong cài đặt VSCode hoặc qua dòng lệnh).
+# Dòng set(CMAKE_PREFIX_PATH ...) đã được xoá để tránh xung đột.
 find_package(Qt6 REQUIRED COMPONENTS Widgets Gui Core Multimedia)
 
-# --- Cấu hình cho FFmpeg ---
-set(FFMPEG_DIR "D:/VSCode/Frame Capture/ffmpeg")
-include_directories(${FFMPEG_DIR}/include)
+# --- Cấu hình cho FFmpeg (Linh hoạt hơn) ---
+# CMake sẽ tìm FFmpeg trong thư mục được chỉ định bởi biến FFMPEG_DIR
+# Bạn có thể set biến này khi chạy CMake: cmake -DFFMPEG_DIR="D:/path/to/ffmpeg" ..
+if(NOT FFMPEG_DIR)
+    set(FFMPEG_DIR "${CMAKE_SOURCE_DIR}/ffmpeg" CACHE PATH "Path to FFmpeg directory")
+endif()
 
-find_library(AVCODEC_LIBRARY NAMES avcodec HINTS ${FFMPEG_DIR}/lib)
-find_library(AVFORMAT_LIBRARY NAMES avformat HINTS ${FFMPEG_DIR}/lib)
-find_library(AVUTIL_LIBRARY NAMES avutil HINTS ${FFMPEG_DIR}/lib)
-find_library(SWSCALE_LIBRARY NAMES swscale HINTS ${FFMPEG_DIR}/lib)
+message(STATUS "Using FFmpeg from: ${FFMPEG_DIR}")
+
+include_directories(${FFMPEG_DIR}/include)
+link_directories(${FFMPEG_DIR}/lib)
 
 # --- Tạo file thực thi ---
 add_executable(FrameCapture
@@ -33,7 +39,7 @@ add_executable(FrameCapture
     libraryitemdelegate.cpp
     cropdialog.cpp
     librarywidget.cpp
-    imageviewerdialog.cpp # Thêm file mới
+    imageviewerdialog.cpp
 )
 
 # --- Liên kết các thư viện cần thiết ---
@@ -42,13 +48,13 @@ target_link_libraries(FrameCapture PRIVATE
     Qt6::Gui
     Qt6::Core
     Qt6::Multimedia
-    ${AVCODEC_LIBRARY}
-    ${AVFORMAT_LIBRARY}
-    ${AVUTIL_LIBRARY}
-    ${SWSCALE_LIBRARY}
+    avcodec
+    avformat
+    avutil
+    swscale
 )
 
-# --- Thêm các file header để VSCode/Qt Creator nhận diện ---
+# --- Thêm các file header để IDE nhận diện ---
 target_sources(FrameCapture PRIVATE
     mainwindow.h
     videoprocessor.h
@@ -57,5 +63,5 @@ target_sources(FrameCapture PRIVATE
     libraryitemdelegate.h
     cropdialog.h
     librarywidget.h
-    imageviewerdialog.h # Thêm file mới
+    imageviewerdialog.h
 )

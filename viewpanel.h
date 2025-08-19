@@ -1,4 +1,4 @@
-// viewpanel.h - Version 1.3
+// viewpanel.h - Version 1.4
 #ifndef VIEWPANEL_H
 #define VIEWPANEL_H
 
@@ -19,14 +19,13 @@ public:
 
     QImage getCompositedImage() const;
 
-signals:
-    void scaleChanged(int newScale);
-
 public slots:
     void setImages(const QList<QImage> &images);
     void setLayoutType(LayoutType type);
     void setSpacing(int spacing);
-    void setScale(int scalePercent);
+    void setScale(double newScale); // Thay đổi từ int sang double
+    void fitToWindow();
+    void setOneToOne();
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -34,7 +33,7 @@ protected:
 
 private:
     QSize calculateTotalSize() const;
-    int findBestColumnCount() const; // SỬA LỖI: Thêm khai báo hàm
+    int findBestColumnCount() const;
 
     QList<QImage> m_images;
     LayoutType m_layoutType = Horizontal;

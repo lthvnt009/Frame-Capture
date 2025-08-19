@@ -1,4 +1,4 @@
-// mainwindow.h - Version 2.4
+// mainwindow.h - Version 2.6
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
@@ -51,19 +51,22 @@ private slots:
     void updateFrame();
     void onCapture();
 
-    // Panels
-    void onLibraryItemChanged(QListWidgetItem *item);
+    // Library Panel
+    void onLibrarySelectionChanged();
+    void onViewAndCropSelected();
+    void onDeleteSelected();
+
+    // View Panel
     void onLibraryItemsMoved();
+    void onLibraryItemChanged(QListWidgetItem *item);
+    void onViewPanelCrop();
     void onStyleChanged();
+
+    // Export Panel
     void onExport();
+    void onExportImage(const QImage& image); // Slot mới để xử lý export từ dialog
     void onChooseSavePath();
     void onOpenSaveFolder();
-    void onViewDetail();
-    void onFitView();
-    void onOneToOne();
-    void onViewSelected();
-    void onDeleteSelected();
-    void updateLibrarySelection();
 
 private:
     void setupUi();
@@ -73,6 +76,7 @@ private:
     void updateTimeLabel(int64_t currentTimeUs, int64_t totalTimeUs);
     void updateUIWithFrame(const FrameData& frameData);
     QString formatTime(int64_t timeUs);
+    void updateAllLibraryItemIndices();
 
     // Layout
     QSplitter *mainSplitter;
@@ -91,14 +95,16 @@ private:
     // Right Panel Components
     LibraryWidget *m_libraryWidget;
     LibraryItemDelegate *m_libraryDelegate;
+    QPushButton *m_viewAndCropButton;
+    QPushButton *m_deleteButton;
+
     ViewPanel *m_viewPanel;
     QRadioButton *m_radioGrid, *m_radioVertical, *m_radioHorizontal;
     QSpinBox *m_spacingSpinBox;
+
     QComboBox *m_formatComboBox;
     QLineEdit *m_savePathEdit;
     QPushButton *m_exportButton;
-    QPushButton *m_viewSelectedButton;
-    QPushButton *m_deleteSelectedButton;
 
     // Data
     QTimer *m_playbackTimer;
