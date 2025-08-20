@@ -1,10 +1,11 @@
-// cropdialog.h - Version 2.8
+// cropdialog.h - Version 3.3
 #ifndef CROPDIALOG_H
 #define CROPDIALOG_H
 
 #include <QDialog>
+#include <QWidget>
 #include <QImage>
-#include <QRect>
+#include <QRectF>
 #include <QPainter>
 #include <QMouseEvent>
 #include <QWheelEvent>
@@ -12,15 +13,61 @@
 #include <QPainterPath>
 #include <QUndoStack>
 
-// Forward declarations
-class CropArea;
+class QTimer;
+class QLineEdit;
+class QStackedWidget;
+
+class CropArea : public QWidget
+{
+    Q_OBJECT
+
+public:
+    explicit CropArea(QWidget *parent = nullptr);
+
+    void setImage(const QImage &image);
+    QRect getSelection() const;
+    void clearSelection();
+    void setAspectRatio(double ratio);
+    void setScale(double newScale);
+
+signals:
+    void scaleChanged(double newScale);
+
+protected:
+    void paintEvent(QPaintEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
+    void wheelEvent(QWheelEvent *event) override;
+
+private slots:
+    void animateSelectionBorder();
+
+private:
+    enum Handle { None, TopLeft, Top, TopRight, Right, BottomRight, Bottom, BottomLeft, Left, Move };
+
+    void updateCursor(const QPointF &pos);
+    void resizeSelection(const QPointF &pos);
+    Handle getHandleAt(const QPointF &pos) const;
+    QRectF getHandleRect(Handle handle) const;
+
+    QImage m_image;
+    QRectF m_selectionRect;
+    double m_aspectRatio = 0.0;
+    double m_scale = 1.0;
+    Handle m_currentHandle = None;
+    QPointF m_dragStartPos;
+    
+    QTimer *m_animationTimer;
+    double m_dashOffset = 0;
+};
+
 class QScrollArea;
 class QButtonGroup;
 class QPushButton;
 class QAction;
-class QLineEdit;
 class QSpinBox;
-class QRadioButton; // SỬA LỖI: Thêm forward declaration
+class QRadioButton;
 
 class CropDialog : public QDialog
 {
@@ -39,11 +86,12 @@ protected:
 
 private slots:
     void onAspectRatioChanged(int id, bool checked);
-    void updateCustomAspectRatio();
+    void updateCustomValues();
     void fitToWindow();
     void oneToOne();
     void applyCrop();
     void exportImage();
+    void updateScaleLabel(double scale);
 
 private:
     void setupUi();
@@ -52,11 +100,17 @@ private:
     QScrollArea *m_scrollArea;
     QButtonGroup *m_ratioGroup;
     QImage m_currentImage;
+    QLineEdit *m_scaleLabel;
 
-    QWidget *m_customRatioWidget;
-    QRadioButton *m_customRatioRadio;
+    QWidget *m_customContainer;
+    QRadioButton *m_customRadio;
+    QRadioButton *m_ratioSubRadio;
+    QRadioButton *m_sizeSubRadio;
+    QStackedWidget *m_customStackedWidget; // Dùng để ổn định kích thước
     QSpinBox *m_customWidthSpinBox;
     QSpinBox *m_customHeightSpinBox;
+    QLineEdit *m_ratioWEdit;
+    QLineEdit *m_ratioHEdit;
 
     QUndoStack *m_undoStack;
     QAction *m_undoAction;

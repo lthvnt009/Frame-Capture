@@ -1,4 +1,4 @@
-// viewpanel.h - Version 1.4
+// viewpanel.h - Version 1.6
 #ifndef VIEWPANEL_H
 #define VIEWPANEL_H
 
@@ -7,6 +7,7 @@
 #include <QImage>
 #include <QSize>
 #include <QWheelEvent>
+#include <QColor>
 
 class ViewPanel : public QWidget
 {
@@ -19,13 +20,20 @@ public:
 
     QImage getCompositedImage() const;
 
+signals:
+    // SỬA LỖI: Bổ sung signal còn thiếu
+    void scaleChanged(double newScale);
+
 public slots:
     void setImages(const QList<QImage> &images);
     void setLayoutType(LayoutType type);
     void setSpacing(int spacing);
-    void setScale(double newScale); // Thay đổi từ int sang double
+    void setScale(double newScale);
     void fitToWindow();
     void setOneToOne();
+    void setBorder(int border);
+    void setCornerRadius(int radius);
+    void setBackgroundColor(const QColor &color);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -39,6 +47,10 @@ private:
     LayoutType m_layoutType = Horizontal;
     int m_spacing = 5;
     double m_scale = 1.0;
+
+    int m_border = 0;
+    int m_cornerRadius = 0;
+    QColor m_backgroundColor = QColor("#333333");
 };
 
 #endif // VIEWPANEL_H

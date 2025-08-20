@@ -1,4 +1,4 @@
-# CMakeLists.txt - Version 2.1
+# CMakeLists.txt - Version 2.2 (Sửa lỗi linker)
 # --- Cài đặt CMake tối thiểu và thông tin dự án ---
 cmake_minimum_required(VERSION 3.16)
 project(FrameCapture VERSION 1.1 LANGUAGES CXX)
@@ -12,14 +12,9 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-# CMake sẽ tìm Qt6 bằng cách sử dụng CMAKE_PREFIX_PATH được cung cấp
-# khi bạn cấu hình dự án (ví dụ: trong cài đặt VSCode hoặc qua dòng lệnh).
-# Dòng set(CMAKE_PREFIX_PATH ...) đã được xoá để tránh xung đột.
 find_package(Qt6 REQUIRED COMPONENTS Widgets Gui Core Multimedia)
 
 # --- Cấu hình cho FFmpeg (Linh hoạt hơn) ---
-# CMake sẽ tìm FFmpeg trong thư mục được chỉ định bởi biến FFMPEG_DIR
-# Bạn có thể set biến này khi chạy CMake: cmake -DFFMPEG_DIR="D:/path/to/ffmpeg" ..
 if(NOT FFMPEG_DIR)
     set(FFMPEG_DIR "${CMAKE_SOURCE_DIR}/ffmpeg" CACHE PATH "Path to FFmpeg directory")
 endif()
@@ -43,6 +38,7 @@ add_executable(FrameCapture
 )
 
 # --- Liên kết các thư viện cần thiết ---
+# SỬA LỖI: Thêm thư viện swresample để xử lý âm thanh
 target_link_libraries(FrameCapture PRIVATE
     Qt6::Widgets
     Qt6::Gui
@@ -52,6 +48,7 @@ target_link_libraries(FrameCapture PRIVATE
     avformat
     avutil
     swscale
+    swresample # <--- THÊM VÀO ĐÂY
 )
 
 # --- Thêm các file header để IDE nhận diện ---

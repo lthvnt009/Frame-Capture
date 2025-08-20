@@ -1,4 +1,4 @@
-// cropdialog.cpp - Version 3.1 (Sửa lỗi thứ tự định nghĩa)
+// cropdialog.cpp - Version 3.6
 #include "cropdialog.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -19,13 +19,22 @@
 #include <QStyle>
 #include <QLabel>
 #include <QSpinBox>
+#include <QLineEdit>
+#include <QDoubleValidator>
+#include <QTimer>
+#include <QGridLayout>
+#include <QStackedWidget>
 
-// --- SỬA LỖI: Chuyển toàn bộ phần triển khai của CropArea lên trước ---
+// --- Triển khai các phương thức của CropArea ---
 
 CropArea::CropArea(QWidget *parent) : QWidget(parent)
 {
     setMouseTracking(true);
     m_selectionRect = QRectF();
+    
+    m_animationTimer = new QTimer(this);
+    connect(m_animationTimer, &QTimer::timeout, this, &CropArea::animateSelectionBorder);
+    m_animationTimer->start(40);
 }
 
 void CropArea::setImage(const QImage &image)
@@ -57,11 +66,24 @@ void CropArea::setAspectRatio(double ratio)
 
 void CropArea::setScale(double newScale)
 {
-    m_scale = newScale;
+    // YÊU CẦU: Cho phép thu nhỏ hơn
+    m_scale = qBound(0.01, newScale, 5.0);
     if(!m_image.isNull()) {
         setFixedSize(m_image.size() * m_scale);
     }
+    emit scaleChanged(m_scale);
     update();
+}
+
+void CropArea::animateSelectionBorder()
+{
+    m_dashOffset -= 0.5;
+    if (m_dashOffset < -8.0) {
+        m_dashOffset = 0;
+    }
+    if (m_selectionRect.isValid()) {
+        update();
+    }
 }
 
 void CropArea::paintEvent(QPaintEvent *event)
@@ -83,7 +105,10 @@ void CropArea::paintEvent(QPaintEvent *event)
         painter.setBrush(QColor(0, 0, 0, 128));
         painter.drawPath(path);
 
-        painter.setPen(QPen(Qt::white, 1 / m_scale, Qt::DashLine));
+        QPen pen(Qt::white, 1 / m_scale, Qt::CustomDashLine);
+        pen.setDashPattern({4.0, 4.0});
+        pen.setDashOffset(m_dashOffset);
+        painter.setPen(pen);
         painter.setBrush(Qt::NoBrush);
         painter.drawRect(m_selectionRect);
 
@@ -128,7 +153,6 @@ void CropArea::mouseReleaseEvent(QMouseEvent *event)
 void CropArea::wheelEvent(QWheelEvent *event)
 {
     double newScale = m_scale + (event->angleDelta().y() > 0 ? 0.1 : -0.1);
-    newScale = qBound(0.1, newScale, 5.0);
     setScale(newScale);
 }
 
@@ -247,7 +271,7 @@ CropDialog::CropDialog(const QImage &image, QWidget *parent)
 {
     setupUi();
     m_cropArea->setImage(m_currentImage);
-    setWindowTitle("Xem");
+    setWindowTitle("Xem & Cắt ảnh"); 
     resize(800, 600);
 }
 
@@ -287,7 +311,10 @@ void CropDialog::setupUi()
     mainLayout->addWidget(toolBar);
 
     m_cropArea = new CropArea(this);
+    connect(m_cropArea, &CropArea::scaleChanged, this, &CropDialog::updateScaleLabel);
     m_scrollArea = new QScrollArea(this);
+    // YÊU CẦU: Căn giữa ảnh trong panel
+    m_scrollArea->setAlignment(Qt::AlignCenter);
     m_scrollArea->setWidget(m_cropArea);
     mainLayout->addWidget(m_scrollArea, 1);
 
@@ -301,63 +328,119 @@ void CropDialog::setupUi()
     QRadioButton *ratio11 = new QRadioButton("1:1");
     QRadioButton *ratio43 = new QRadioButton("4:3");
     QRadioButton *ratio169 = new QRadioButton("16:9");
-    m_customRatioRadio = new QRadioButton("Tuỳ chỉnh");
+    m_customRadio = new QRadioButton("Tuỳ chỉnh");
+
     m_ratioGroup->addButton(freeformRadio, 0);
     m_ratioGroup->addButton(ratio11, 1);
     m_ratioGroup->addButton(ratio43, 2);
     m_ratioGroup->addButton(ratio169, 3);
-    m_ratioGroup->addButton(m_customRatioRadio, 4);
+    m_ratioGroup->addButton(m_customRadio, 4);
+
     ratioHLayout->addWidget(freeformRadio);
     ratioHLayout->addWidget(ratio11);
     ratioHLayout->addWidget(ratio43);
     ratioHLayout->addWidget(ratio169);
-    ratioHLayout->addWidget(m_customRatioRadio);
+    ratioHLayout->addWidget(m_customRadio);
     ratioVLayout->addLayout(ratioHLayout);
 
-    m_customRatioWidget = new QWidget();
-    QHBoxLayout *customLayout = new QHBoxLayout(m_customRatioWidget);
-    customLayout->setContentsMargins(0, 5, 0, 0);
+    m_customContainer = new QWidget();
+    QVBoxLayout *customContainerLayout = new QVBoxLayout(m_customContainer);
+    customContainerLayout->setContentsMargins(10, 5, 0, 0);
+
+    // YÊU CẦU: Dùng QStackedWidget để ổn định kích thước
+    m_customStackedWidget = new QStackedWidget();
+    m_ratioSubRadio = new QRadioButton("Theo tỉ lệ");
+    m_sizeSubRadio = new QRadioButton("Theo kích thước");
+    
+    // -- Widget con cho Tỉ lệ
+    QWidget* ratioWidgetPage = new QWidget();
+    QHBoxLayout *customRatioLayout = new QHBoxLayout(ratioWidgetPage);
+    customRatioLayout->setContentsMargins(0, 0, 0, 0);
+    m_ratioWEdit = new QLineEdit("16");
+    m_ratioWEdit->setValidator(new QDoubleValidator(0.1, 1000, 2, this));
+    m_ratioWEdit->setFixedWidth(50);
+    m_ratioHEdit = new QLineEdit("9");
+    m_ratioHEdit->setValidator(new QDoubleValidator(0.1, 1000, 2, this));
+    m_ratioHEdit->setFixedWidth(50);
+    customRatioLayout->addWidget(m_ratioWEdit);
+    customRatioLayout->addWidget(new QLabel(":"));
+    customRatioLayout->addWidget(m_ratioHEdit);
+    customRatioLayout->addStretch();
+    m_customStackedWidget->addWidget(ratioWidgetPage);
+    
+    // -- Widget con cho Kích thước
+    QWidget* sizeWidgetPage = new QWidget();
+    QHBoxLayout *customSizeLayout = new QHBoxLayout(sizeWidgetPage);
+    customSizeLayout->setContentsMargins(0, 0, 0, 0);
     m_customWidthSpinBox = new QSpinBox();
     m_customWidthSpinBox->setRange(1, 9999); m_customWidthSpinBox->setValue(1920);
+    m_customWidthSpinBox->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    m_customWidthSpinBox->setFixedWidth(50);
     m_customHeightSpinBox = new QSpinBox();
     m_customHeightSpinBox->setRange(1, 9999); m_customHeightSpinBox->setValue(1080);
-    customLayout->addWidget(new QLabel("Kích thước:"));
-    customLayout->addWidget(m_customWidthSpinBox);
-    customLayout->addWidget(new QLabel("x"));
-    customLayout->addWidget(m_customHeightSpinBox);
-    customLayout->addStretch();
-    ratioVLayout->addWidget(m_customRatioWidget);
-    m_customRatioWidget->setVisible(false);
+    m_customHeightSpinBox->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    m_customHeightSpinBox->setFixedWidth(50);
+    customSizeLayout->addWidget(m_customWidthSpinBox);
+    customSizeLayout->addWidget(new QLabel("x"));
+    customSizeLayout->addWidget(m_customHeightSpinBox);
+    customSizeLayout->addStretch();
+    m_customStackedWidget->addWidget(sizeWidgetPage);
+
+    QGridLayout *customGridLayout = new QGridLayout();
+    customGridLayout->setColumnStretch(1, 1);
+    customGridLayout->addWidget(m_ratioSubRadio, 0, 0);
+    customGridLayout->addWidget(m_sizeSubRadio, 1, 0);
+    customGridLayout->addWidget(m_customStackedWidget, 0, 1, 2, 1);
+    customContainerLayout->addLayout(customGridLayout);
+    
+    m_ratioSubRadio->setChecked(true);
+    
+    ratioVLayout->addWidget(m_customContainer);
+    m_customContainer->setVisible(false);
     freeformRadio->setChecked(true);
 
-    QHBoxLayout *controlsLayout = new QHBoxLayout();
+    connect(m_ratioSubRadio, &QRadioButton::toggled, this, &CropDialog::updateCustomValues);
+    connect(m_sizeSubRadio, &QRadioButton::toggled, this, &CropDialog::updateCustomValues);
+
+    QGroupBox *zoomBox = new QGroupBox("Thu phóng");
+    QHBoxLayout *zoomLayout = new QHBoxLayout(zoomBox);
     QPushButton *fitButton = new QPushButton("Phóng");
     fitButton->setToolTip("Thu phóng ảnh vừa với khung xem");
     QPushButton *oneToOneButton = new QPushButton("1:1");
     oneToOneButton->setToolTip("Xem ảnh với kích thước thật");
+    m_scaleLabel = new QLineEdit("100%");
+    m_scaleLabel->setReadOnly(true);
+    m_scaleLabel->setAlignment(Qt::AlignCenter);
+    m_scaleLabel->setFixedSize(50, 22);
+    m_scaleLabel->setToolTip("Tỉ lệ phóng hiện tại");
+    // YÊU CẦU: Màu nền và vị trí mới cho ô zoom
+    m_scaleLabel->setStyleSheet("background-color: #2c3e50; color: white; border: 1px solid #606060;");
+    zoomLayout->addWidget(fitButton);
+    zoomLayout->addWidget(oneToOneButton);
+    zoomLayout->addWidget(m_scaleLabel);
 
+    QHBoxLayout *controlsLayout = new QHBoxLayout();
     controlsLayout->addWidget(ratioBox);
     controlsLayout->addStretch();
-    controlsLayout->addWidget(fitButton);
-    controlsLayout->addWidget(oneToOneButton);
+    controlsLayout->addWidget(zoomBox);
     mainLayout->addLayout(controlsLayout);
 
+    // YÊU CẦU: Sửa lại thứ tự nút
     QDialogButtonBox *buttonBox = new QDialogButtonBox();
-    QPushButton* okButton = buttonBox->addButton("OK", QDialogButtonBox::AcceptRole);
-    okButton->setToolTip("Chấp nhận ảnh đã chỉnh sửa và đóng cửa sổ");
-    buttonBox->addButton(QDialogButtonBox::Cancel);
-    QPushButton *exportButton = new QPushButton("Xuất ảnh");
+    buttonBox->addButton("OK", QDialogButtonBox::AcceptRole);
+    QPushButton* cancelButton = buttonBox->addButton("Huỷ", QDialogButtonBox::RejectRole);
+    QPushButton *exportButton = buttonBox->addButton("Xuất ảnh", QDialogButtonBox::ActionRole);
     exportButton->setToolTip("Lưu ảnh hiện tại ra file và đóng cửa sổ");
     exportButton->setStyleSheet("background-color: #e67e22; color: white; border: none; padding: 5px; border-radius: 3px;");
-    buttonBox->addButton(exportButton, QDialogButtonBox::ActionRole);
-    okButton->setDefault(false);
     
     connect(m_ratioGroup, &QButtonGroup::idToggled, this, &CropDialog::onAspectRatioChanged);
-    connect(m_customWidthSpinBox, &QSpinBox::valueChanged, this, &CropDialog::updateCustomAspectRatio);
-    connect(m_customHeightSpinBox, &QSpinBox::valueChanged, this, &CropDialog::updateCustomAspectRatio);
+    connect(m_customWidthSpinBox, &QSpinBox::valueChanged, this, &CropDialog::updateCustomValues);
+    connect(m_customHeightSpinBox, &QSpinBox::valueChanged, this, &CropDialog::updateCustomValues);
+    connect(m_ratioWEdit, &QLineEdit::textChanged, this, &CropDialog::updateCustomValues);
+    connect(m_ratioHEdit, &QLineEdit::textChanged, this, &CropDialog::updateCustomValues);
     connect(fitButton, &QPushButton::clicked, this, &CropDialog::fitToWindow);
     connect(oneToOneButton, &QPushButton::clicked, this, &CropDialog::oneToOne);
-    connect(okButton, &QPushButton::clicked, this, &QDialog::accept);
+    connect(buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(exportButton, &QPushButton::clicked, this, &CropDialog::exportImage);
     connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
     mainLayout->addWidget(buttonBox);
@@ -367,26 +450,41 @@ void CropDialog::onAspectRatioChanged(int id, bool checked)
 {
     if (!checked) return;
     
-    m_customRatioWidget->setVisible(id == 4);
+    m_customContainer->setVisible(id == 4);
 
     switch(id) {
         case 0: m_cropArea->setAspectRatio(0.0); break;
         case 1: m_cropArea->setAspectRatio(1.0); break;
         case 2: m_cropArea->setAspectRatio(4.0/3.0); break;
         case 3: m_cropArea->setAspectRatio(16.0/9.0); break;
-        case 4: updateCustomAspectRatio(); break;
+        case 4: updateCustomValues(); break;
     }
 }
 
-void CropDialog::updateCustomAspectRatio()
+void CropDialog::updateCustomValues()
 {
-    if (m_customRatioRadio->isChecked()) {
-        double w = m_customWidthSpinBox->value();
-        double h = m_customHeightSpinBox->value();
-        if (h > 0) {
-            m_cropArea->setAspectRatio(w / h);
+    if (m_customRadio->isChecked()) {
+        m_customStackedWidget->setCurrentIndex(m_sizeSubRadio->isChecked() ? 1 : 0);
+
+        if (m_sizeSubRadio->isChecked()) {
+            double w = m_customWidthSpinBox->value();
+            double h = m_customHeightSpinBox->value();
+            if (h > 0) {
+                m_cropArea->setAspectRatio(w / h);
+            }
+        } else if (m_ratioSubRadio->isChecked()) {
+            double w = m_ratioWEdit->text().toDouble();
+            double h = m_ratioHEdit->text().toDouble();
+            if (h > 0) {
+                m_cropArea->setAspectRatio(w / h);
+            }
         }
     }
+}
+
+void CropDialog::updateScaleLabel(double scale)
+{
+    m_scaleLabel->setText(QString::number(qRound(scale * 100)) + "%");
 }
 
 void CropDialog::fitToWindow()
