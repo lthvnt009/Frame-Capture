@@ -1,4 +1,4 @@
-// libraryitemdelegate.h - Version 1.0
+// libraryitemdelegate.h - Version 1.1
 #ifndef LIBRARYITEMDELEGATE_H
 #define LIBRARYITEMDELEGATE_H
 
@@ -15,7 +15,9 @@ public:
     bool editorEvent(QEvent *event, QAbstractItemModel *model, const QStyleOptionViewItem &option, const QModelIndex &index) override;
 
 private:
-    QRect getCheckBoxRect(const QRect &itemRect) const;
+    // THÊM MỚI: Các hàm helper để tính toán vị trí
+    QRect getPixmapRect(const QStyleOptionViewItem &option) const;
+    QRect getCheckBoxRect(const QStyleOptionViewItem &option) const;
 };
 
 #endif // LIBRARYITEMDELEGATE_H

@@ -1,4 +1,4 @@
-// viewpanel.cpp - Version 1.8
+// viewpanel.cpp - Version 2.1
 #include "viewpanel.h"
 #include <QPainter>
 #include <QPainterPath>
@@ -30,8 +30,7 @@ void ViewPanel::setSpacing(int spacing)
 
 void ViewPanel::setScale(double newScale)
 {
-    m_scale = qBound(0.1, newScale, 5.0);
-    // SỬA LỖI: Phát tín hiệu khi scale thay đổi
+    m_scale = qBound(0.01, newScale, 5.0);
     emit scaleChanged(m_scale);
     update();
 }
@@ -90,8 +89,8 @@ QImage ViewPanel::getCompositedImage() const
     painter.setRenderHint(QPainter::Antialiasing);
     painter.setRenderHint(QPainter::SmoothPixmapTransform);
 
-    int currentX = m_spacing + m_border;
-    int currentY = m_spacing + m_border;
+    int currentX = m_border;
+    int currentY = m_border;
     int maxRowHeight = 0;
 
     auto drawRoundedImage = [&](const QImage& img, int x, int y) {
@@ -129,7 +128,7 @@ QImage ViewPanel::getCompositedImage() const
             current_col++;
             if (current_col >= cols) {
                 current_col = 0;
-                currentX = m_spacing + m_border;
+                currentX = m_border;
                 currentY += maxRowHeight + m_spacing;
                 maxRowHeight = 0;
             }
@@ -162,7 +161,13 @@ void ViewPanel::paintEvent(QPaintEvent *event)
 
 void ViewPanel::wheelEvent(QWheelEvent *event)
 {
-    double newScale = m_scale + (event->angleDelta().y() > 0 ? 0.1 : -0.1);
+    double zoomFactor = 1.15;
+    double newScale;
+    if (event->angleDelta().y() > 0) {
+        newScale = m_scale * zoomFactor;
+    } else {
+        newScale = m_scale / zoomFactor;
+    }
     setScale(newScale);
 }
 
@@ -198,9 +203,13 @@ QSize ViewPanel::calculateTotalSize() const
 
     int totalWidth = 0;
     int totalHeight = 0;
+    int imageCount = m_images.count();
+
+    // THAY ĐỔI: Sửa logic tính toán để không có viền thừa
+    int effectiveSpacing = (imageCount > 1) ? m_spacing : 0;
 
     if (m_layoutType == Horizontal) {
-        totalWidth = (m_images.count() - 1) * m_spacing;
+        totalWidth = (imageCount - 1) * effectiveSpacing;
         int maxHeight = 0;
         for (const QImage &img : m_images) {
             totalWidth += img.width();
@@ -208,7 +217,7 @@ QSize ViewPanel::calculateTotalSize() const
         }
         totalHeight = maxHeight;
     } else if (m_layoutType == Vertical) {
-        totalHeight = (m_images.count() - 1) * m_spacing;
+        totalHeight = (imageCount - 1) * effectiveSpacing;
         int maxWidth = 0;
         for (const QImage &img : m_images) {
             totalHeight += img.height();
@@ -218,18 +227,18 @@ QSize ViewPanel::calculateTotalSize() const
     } else { // Grid
         int cols = findBestColumnCount();
         if (cols == 0) return {0,0};
-        int rows = qCeil((double)m_images.count() / cols);
+        int rows = qCeil((double)imageCount / cols);
         if (rows == 0) return {0,0};
 
         int imageWidth = m_images[0].width();
         int imageHeight = m_images[0].height();
 
-        totalWidth = cols * imageWidth + (cols - 1) * m_spacing;
-        totalHeight = rows * imageHeight + (rows - 1) * m_spacing;
+        totalWidth = cols * imageWidth + (cols > 1 ? (cols - 1) * m_spacing : 0);
+        totalHeight = rows * imageHeight + (rows > 1 ? (rows - 1) * m_spacing : 0);
     }
     
-    totalWidth += 2 * (m_border + m_spacing);
-    totalHeight += 2 * (m_border + m_spacing);
+    totalWidth += 2 * m_border;
+    totalHeight += 2 * m_border;
 
     return {totalWidth, totalHeight};
 }

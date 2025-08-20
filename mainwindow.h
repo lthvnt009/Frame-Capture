@@ -1,4 +1,4 @@
-// mainwindow.h - Version 3.2
+// mainwindow.h - Version 3.9 (Timeline Hover)
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
@@ -7,11 +7,14 @@
 #include <QImage>
 #include <QFrame>
 #include <QMouseEvent>
+#include <memory>
 #include "videoprocessor.h"
 #include "viewpanel.h"
 
+// --- Forward declarations ---
+class QCloseEvent;
+
 // --- Helper class cho ô màu có thể click ---
-// Lớp này phải được định nghĩa trong file header để AUTOMOC hoạt động chính xác
 class ClickableFrame : public QFrame {
     Q_OBJECT
 public:
@@ -30,13 +33,12 @@ protected:
 };
 
 
-// --- Forward declarations cho các lớp khác ---
+// --- Forward declarations ---
 class QSplitter;
 class VideoWidget;
 class QPushButton;
 class QSlider;
 class QLabel;
-class QTimer;
 class QDragEnterEvent;
 class QDropEvent;
 class QKeyEvent;
@@ -51,6 +53,8 @@ class QLineEdit;
 class QAudioSink;
 class QIODevice;
 class QAction;
+class QThread;
+class VideoWorker;
 
 
 class MainWindow : public QMainWindow
@@ -61,24 +65,39 @@ public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+signals:
+    // Tín hiệu gửi yêu cầu tới Worker Thread
+    void requestOpenFile(const QString &filePath);
+    void requestSeek(qint64 timestamp);
+    void requestPlayPause(bool play);
+    void requestNextFrame();
+    void requestPrevFrame();
+    void requestStop();
+
 protected:
     void dragEnterEvent(QDragEnterEvent *event) override;
     void dropEvent(QDropEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
+    void closeEvent(QCloseEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override; // THÊM MỚI
 
 private slots:
-    // Media Player
+    // Slots nhận tín hiệu từ Worker Thread
+    void onFileOpened(bool success, VideoProcessor::AudioParams params, double frameRate, qint64 duration, AVRational timeBase);
+    void onFrameReady(const FrameData &frameData);
+
+    // Media Player UI Slots
     void onOpenFile();
     void onPlayPause();
     void onNextFrame();
     void onPrevFrame();
     void onTimelinePressed();
     void onTimelineReleased();
-    void updateFrame();
     void onCapture();
     void onCaptureAndExport();
     void onMuteClicked();
     void onVolumeChanged(int volume);
+    void onToggleRightPanel();
 
     // Library Panel
     void onLibrarySelectionChanged();
@@ -107,8 +126,13 @@ private:
     void setupUi();
     void setupLeftPanel(QWidget *parent);
     void setupRightPanel(QWidget *parent);
-    QWidget* createVerticalSpinBox(QSpinBox* spinbox);
+    void setupVideoWorker();
     void openVideoFile(const QString& filePath);
+    void setupTempDirectory();
+    void cleanupTempDirectory();
+    void saveSettings();
+    void loadSettings();
+    QWidget* createVerticalSpinBox(QSpinBox* spinbox);
     void updateTimeLabel(int64_t currentTimeUs, int64_t totalTimeUs);
     void updateUIWithFrame(const FrameData& frameData);
     QString formatTime(int64_t timeUs);
@@ -119,8 +143,10 @@ private:
     // Layout
     QSplitter *mainSplitter;
 
+    std::unique_ptr<VideoWorker> m_videoWorker;
+    std::unique_ptr<QThread> m_videoThread;
+
     // Left Panel Components
-    VideoProcessor *m_videoProcessor;
     VideoWidget *m_videoWidget;
     QPushButton *m_openButton;
     QPushButton *m_playPauseButton;
@@ -128,6 +154,7 @@ private:
     QPushButton *m_prevFrameButton;
     QPushButton *m_captureButton;
     QPushButton *m_captureAndExportButton;
+    QPushButton *m_toggleRightPanelButton;
     QAction *m_captureExportAction;
     QSlider *m_timelineSlider;
     QLabel *m_timeLabel;
@@ -162,10 +189,15 @@ private:
     QPushButton *m_exportButton;
 
     // Data
-    QTimer *m_playbackTimer;
     bool m_isPlaying = false;
     int64_t m_currentPts = 0;
-    QList<QImage> m_capturedFrames;
+    QList<QString> m_capturedFramePaths;
     QString m_currentVideoPath;
+    QString m_tempPath;
+
+    // Video Info (lấy từ worker)
+    double m_frameRate = 0.0;
+    qint64 m_duration = 0;
+    AVRational m_timeBase = {0, 1};
 };
 #endif // MAINWINDOW_H

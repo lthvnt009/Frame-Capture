@@ -1,4 +1,4 @@
-# CMakeLists.txt - Version 2.2 (Sửa lỗi linker)
+# CMakeLists.txt - Version 2.4 (Thêm VideoWorker)
 # --- Cài đặt CMake tối thiểu và thông tin dự án ---
 cmake_minimum_required(VERSION 3.16)
 project(FrameCapture VERSION 1.1 LANGUAGES CXX)
@@ -35,10 +35,11 @@ add_executable(FrameCapture
     cropdialog.cpp
     librarywidget.cpp
     imageviewerdialog.cpp
+    videoworker.cpp
+    resources.qrc
 )
 
 # --- Liên kết các thư viện cần thiết ---
-# SỬA LỖI: Thêm thư viện swresample để xử lý âm thanh
 target_link_libraries(FrameCapture PRIVATE
     Qt6::Widgets
     Qt6::Gui
@@ -48,7 +49,7 @@ target_link_libraries(FrameCapture PRIVATE
     avformat
     avutil
     swscale
-    swresample # <--- THÊM VÀO ĐÂY
+    swresample
 )
 
 # --- Thêm các file header để IDE nhận diện ---
@@ -61,4 +62,5 @@ target_sources(FrameCapture PRIVATE
     cropdialog.h
     librarywidget.h
     imageviewerdialog.h
+    videoworker.h
 )

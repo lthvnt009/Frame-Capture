@@ -1,4 +1,4 @@
-// cropdialog.cpp - Version 3.6
+// cropdialog.cpp - Version 4.1 (Button Order Fix)
 #include "cropdialog.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -66,7 +66,6 @@ void CropArea::setAspectRatio(double ratio)
 
 void CropArea::setScale(double newScale)
 {
-    // YÊU CẦU: Cho phép thu nhỏ hơn
     m_scale = qBound(0.01, newScale, 5.0);
     if(!m_image.isNull()) {
         setFixedSize(m_image.size() * m_scale);
@@ -152,7 +151,13 @@ void CropArea::mouseReleaseEvent(QMouseEvent *event)
 
 void CropArea::wheelEvent(QWheelEvent *event)
 {
-    double newScale = m_scale + (event->angleDelta().y() > 0 ? 0.1 : -0.1);
+    double zoomFactor = 1.15;
+    double newScale;
+    if (event->angleDelta().y() > 0) {
+        newScale = m_scale * zoomFactor;
+    } else {
+        newScale = m_scale / zoomFactor;
+    }
     setScale(newScale);
 }
 
@@ -313,7 +318,6 @@ void CropDialog::setupUi()
     m_cropArea = new CropArea(this);
     connect(m_cropArea, &CropArea::scaleChanged, this, &CropDialog::updateScaleLabel);
     m_scrollArea = new QScrollArea(this);
-    // YÊU CẦU: Căn giữa ảnh trong panel
     m_scrollArea->setAlignment(Qt::AlignCenter);
     m_scrollArea->setWidget(m_cropArea);
     mainLayout->addWidget(m_scrollArea, 1);
@@ -347,7 +351,6 @@ void CropDialog::setupUi()
     QVBoxLayout *customContainerLayout = new QVBoxLayout(m_customContainer);
     customContainerLayout->setContentsMargins(10, 5, 0, 0);
 
-    // YÊU CẦU: Dùng QStackedWidget để ổn định kích thước
     m_customStackedWidget = new QStackedWidget();
     m_ratioSubRadio = new QRadioButton("Theo tỉ lệ");
     m_sizeSubRadio = new QRadioButton("Theo kích thước");
@@ -413,8 +416,7 @@ void CropDialog::setupUi()
     m_scaleLabel->setAlignment(Qt::AlignCenter);
     m_scaleLabel->setFixedSize(50, 22);
     m_scaleLabel->setToolTip("Tỉ lệ phóng hiện tại");
-    // YÊU CẦU: Màu nền và vị trí mới cho ô zoom
-    m_scaleLabel->setStyleSheet("background-color: #2c3e50; color: white; border: 1px solid #606060;");
+    m_scaleLabel->setStyleSheet("background-color: #2c3e50; color: white; border: 1px solid #606060; selection-background-color: transparent;");
     zoomLayout->addWidget(fitButton);
     zoomLayout->addWidget(oneToOneButton);
     zoomLayout->addWidget(m_scaleLabel);
@@ -425,10 +427,10 @@ void CropDialog::setupUi()
     controlsLayout->addWidget(zoomBox);
     mainLayout->addLayout(controlsLayout);
 
-    // YÊU CẦU: Sửa lại thứ tự nút
+    // THAY ĐỔI: Sửa lại thứ tự nút
     QDialogButtonBox *buttonBox = new QDialogButtonBox();
     buttonBox->addButton("OK", QDialogButtonBox::AcceptRole);
-    QPushButton* cancelButton = buttonBox->addButton("Huỷ", QDialogButtonBox::RejectRole);
+    buttonBox->addButton("Huỷ", QDialogButtonBox::RejectRole);
     QPushButton *exportButton = buttonBox->addButton("Xuất ảnh", QDialogButtonBox::ActionRole);
     exportButton->setToolTip("Lưu ảnh hiện tại ra file và đóng cửa sổ");
     exportButton->setStyleSheet("background-color: #e67e22; color: white; border: none; padding: 5px; border-radius: 3px;");

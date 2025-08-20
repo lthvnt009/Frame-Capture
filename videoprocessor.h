@@ -1,10 +1,11 @@
-// videoprocessor.h - Version 1.4
+// videoprocessor.h - Version 1.5
 #ifndef VIDEOPROCESSOR_H
 #define VIDEOPROCESSOR_H
 
 #include <QString>
 #include <QImage>
 #include <QByteArray>
+#include <atomic> // Thêm vào để sử dụng std::atomic
 
 extern "C" {
 #include <libavformat/avformat.h>
@@ -43,6 +44,9 @@ public:
     AVRational getTimeBase() const;
     double getFrameRate() const;
     AudioParams getAudioParams() const;
+
+    // THÊM MỚI: Cờ điều khiển an toàn cho đa luồng
+    std::atomic<bool> stop_processing;
 
 private:
     void cleanup();

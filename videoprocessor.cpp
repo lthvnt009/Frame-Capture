@@ -1,13 +1,14 @@
-// videoprocessor.cpp - Version 1.4
+// videoprocessor.cpp - Version 1.6 (Fixed typo)
 #include "videoprocessor.h"
 #include <QDebug>
 
-VideoProcessor::VideoProcessor() {}
+VideoProcessor::VideoProcessor() : stop_processing(false) {}
 VideoProcessor::~VideoProcessor() { cleanup(); }
 
 bool VideoProcessor::openFile(const QString &filePath)
 {
     cleanup();
+    stop_processing = false; // Reset cờ khi mở file mới
     std::string filePathStr = filePath.toStdString();
     if (avformat_open_input(&formatContext, filePathStr.c_str(), nullptr, nullptr) != 0) return false;
     if (avformat_find_stream_info(formatContext, nullptr) < 0) { cleanup(); return false; }
@@ -64,7 +65,7 @@ FrameData VideoProcessor::decodeNextFrame()
     AVFrame* frame = av_frame_alloc();
     FrameData result;
 
-    while (av_read_frame(formatContext, packet) >= 0) {
+    while (av_read_frame(formatContext, packet) >= 0 && !stop_processing) {
         if (packet->stream_index == videoStreamIndex) {
             if (avcodec_send_packet(videoCodecContext, packet) == 0) {
                 if (avcodec_receive_frame(videoCodecContext, frame) == 0) {
@@ -97,7 +98,7 @@ FrameData VideoProcessor::seekAndDecode(int64_t target_ts_us)
 {
     if (!seek(target_ts_us)) return {};
     FrameData frameData;
-    while (true) {
+    while (!stop_processing) {
         frameData = decodeNextFrame();
         if (frameData.image.isNull()) return frameData;
         AVRational timeBase = getTimeBase();
@@ -105,6 +106,7 @@ FrameData VideoProcessor::seekAndDecode(int64_t target_ts_us)
         int64_t current_ts_us = frameData.pts * 1000000 * timeBase.num / timeBase.den;
         if (current_ts_us >= target_ts_us) return frameData;
     }
+    return {}; // Trả về rỗng nếu bị dừng
 }
 
 bool VideoProcessor::seek(int64_t timestamp)
@@ -159,6 +161,8 @@ QByteArray VideoProcessor::resampleAudioFrame(AVFrame *frame)
 
 void VideoProcessor::cleanup()
 {
+    stop_processing = true; 
+    // SỬA LỖI: Sửa lỗi đánh máy
     if (swsContext) { sws_freeContext(swsContext); swsContext = nullptr; }
     if (videoCodecContext) { avcodec_free_context(&videoCodecContext); videoCodecContext = nullptr; }
     if (swrContext) { swr_free(&swrContext); swrContext = nullptr; }

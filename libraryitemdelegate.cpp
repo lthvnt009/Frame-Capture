@@ -1,39 +1,56 @@
-// libraryitemdelegate.cpp - Version 1.1
+// libraryitemdelegate.cpp - Version 1.2
 #include "libraryitemdelegate.h"
 #include <QPainter>
 #include <QApplication>
 #include <QMouseEvent>
 #include <QStyleOptionViewItem>
+#include <QIcon>
 
 LibraryItemDelegate::LibraryItemDelegate(QObject *parent) : QStyledItemDelegate(parent) {}
+
+QRect LibraryItemDelegate::getPixmapRect(const QStyleOptionViewItem &option) const
+{
+    QIcon icon = qvariant_cast<QIcon>(option.index.data(Qt::DecorationRole));
+    QRect contentRect = option.rect.adjusted(1, 1, -1, -1); // Giảm padding để ảnh lớn hơn một chút
+    QPixmap pixmap = icon.pixmap(contentRect.size(), QIcon::Normal, QIcon::On);
+    
+    int pixmapX = contentRect.x() + (contentRect.width() - pixmap.width()) / 2;
+    int pixmapY = contentRect.y() + (contentRect.height() - pixmap.height()) / 2;
+    return QRect(pixmapX, pixmapY, pixmap.width(), pixmap.height());
+}
+
+QRect LibraryItemDelegate::getCheckBoxRect(const QStyleOptionViewItem &option) const
+{
+    QRect pixmapRect = getPixmapRect(option);
+    int size = 16;
+    int margin = 3;
+    return QRect(pixmapRect.left() + margin, pixmapRect.bottom() - size - margin, size, size);
+}
+
 
 void LibraryItemDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const
 {
     painter->save();
 
-    // --- YÊU CẦU MỚI: Vẽ nền highlight cho item được chọn ---
-    // Phải được vẽ trước tiên để nằm dưới cùng.
     if (option.state & QStyle::State_Selected) {
         painter->fillRect(option.rect, option.palette.highlight());
     }
 
-    // Lấy icon (thumbnail) và trạng thái check
     QIcon icon = qvariant_cast<QIcon>(index.data(Qt::DecorationRole));
     Qt::CheckState checkState = static_cast<Qt::CheckState>(index.data(Qt::CheckStateRole).toInt());
-
+    
     // Vẽ thumbnail
-    QRect itemRect = option.rect;
-    // Thêm một chút padding để thumbnail không bị dính vào viền highlight
-    QRect thumbnailRect = itemRect.adjusted(2, 2, -2, -2);
-    QPixmap pixmap = icon.pixmap(thumbnailRect.size(), QIcon::Normal, QIcon::On);
-    // Căn giữa thumbnail trong vùng item
-    int x = thumbnailRect.x() + (thumbnailRect.width() - pixmap.width()) / 2;
-    int y = thumbnailRect.y() + (thumbnailRect.height() - pixmap.height()) / 2;
-    painter->drawPixmap(x, y, pixmap);
+    QRect pixmapRect = getPixmapRect(option);
+    painter->drawPixmap(pixmapRect.topLeft(), icon.pixmap(pixmapRect.size()));
 
+    // Vẽ checkbox
+    QRect checkBoxRect = getCheckBoxRect(option);
+    
+    // Vẽ nền mờ cho checkbox để dễ nhìn
+    painter->setBrush(QColor(0, 0, 0, 100));
+    painter->setPen(Qt::NoPen);
+    painter->drawRoundedRect(checkBoxRect.adjusted(-2, -2, 2, 2), 2, 2);
 
-    // Vẽ checkbox ở góc dưới bên trái
-    QRect checkBoxRect = getCheckBoxRect(itemRect);
     QStyleOptionButton checkBoxOpt;
     checkBoxOpt.rect = checkBoxRect;
     checkBoxOpt.state = QStyle::State_Enabled;
@@ -42,8 +59,6 @@ void LibraryItemDelegate::paint(QPainter *painter, const QStyleOptionViewItem &o
     } else {
         checkBoxOpt.state |= QStyle::State_Off;
     }
-    // Vẽ checkbox với nền trong suốt để không che mất highlight
-    painter->setBrush(Qt::transparent);
     QApplication::style()->drawControl(QStyle::CE_CheckBox, &checkBoxOpt, painter);
 
     painter->restore();
@@ -53,24 +68,14 @@ bool LibraryItemDelegate::editorEvent(QEvent *event, QAbstractItemModel *model, 
 {
     if (event->type() == QEvent::MouseButtonRelease) {
         QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
-        QRect checkBoxRect = getCheckBoxRect(option.rect);
+        QRect checkBoxRect = getCheckBoxRect(option);
 
-        // Nếu click vào vùng checkbox, thay đổi trạng thái
         if (checkBoxRect.contains(mouseEvent->pos())) {
             Qt::CheckState currentState = static_cast<Qt::CheckState>(index.data(Qt::CheckStateRole).toInt());
             Qt::CheckState newState = (currentState == Qt::Checked) ? Qt::Unchecked : Qt::Checked;
             model->setData(index, newState, Qt::CheckStateRole);
-            return true; // Sự kiện đã được xử lý
+            return true;
         }
     }
-    // Chuyển tiếp sự kiện cho lớp cơ sở để xử lý việc chọn item
     return QStyledItemDelegate::editorEvent(event, model, option, index);
-}
-
-QRect LibraryItemDelegate::getCheckBoxRect(const QRect &itemRect) const
-{
-    // Kích thước và vị trí của checkbox
-    int size = 20;
-    int margin = 5;
-    return QRect(itemRect.left() + margin, itemRect.bottom() - size - margin, size, size);
 }
