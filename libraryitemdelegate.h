@@ -1,4 +1,4 @@
-// libraryitemdelegate.h - Version 1.2 (Constants added)
+// libraryitemdelegate.h - Version 1.5 (UI Tweaks)
 #ifndef LIBRARYITEMDELEGATE_H
 #define LIBRARYITEMDELEGATE_H
 
@@ -15,14 +15,12 @@ public:
     bool editorEvent(QEvent *event, QAbstractItemModel *model, const QStyleOptionViewItem &option, const QModelIndex &index) override;
 
 private:
-    QRect getPixmapRect(const QStyleOptionViewItem &option) const;
     QRect getCheckBoxRect(const QStyleOptionViewItem &option) const;
 
-    // THÊM MỚI: Định nghĩa các hằng số để code dễ đọc và bảo trì
-    static constexpr int CHECKBOX_SIZE = 16;
+    // TINH CHỈNH: Giảm kích thước checkbox
+    static constexpr int CHECKBOX_SIZE = 12;
     static constexpr int CHECKBOX_MARGIN = 3;
-    static constexpr int CHECKBOX_BG_PADDING = 2;
-    static constexpr int CHECKBOX_BG_RADIUS = 2;
+    // Đã loại bỏ các hằng số cho background
 };
 
 #endif // LIBRARYITEMDELEGATE_H

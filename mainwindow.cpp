@@ -1,4 +1,4 @@
-// mainwindow.cpp - Version 6.0 (Final Fixes & State Management)
+// mainwindow.cpp - Version 6.3 (Audio & Build Fix)
 #include "mainwindow.h"
 #include "videowidget.h"
 #include "viewpanel.h"
@@ -81,7 +81,6 @@ MainWindow::MainWindow(QWidget *parent)
         }
     });
 
-    // SỬA LỖI: Vô hiệu hóa các nút khi chưa có video
     updatePlayerState(false);
 }
 
@@ -127,7 +126,6 @@ void MainWindow::saveSettings()
     settings.setValue("geometry", saveGeometry());
     settings.setValue("windowState", saveState());
     settings.setValue("splitterState", mainSplitter->saveState());
-    // Chỉ lưu thư mục cuối cùng, không lưu đường dẫn file
     if (!m_currentVideoPath.isEmpty()) {
         settings.setValue("lastUsedDir", QFileInfo(m_currentVideoPath).absolutePath());
     }
@@ -144,7 +142,6 @@ void MainWindow::loadSettings()
         mainSplitter->restoreState(splitterState);
     }
 
-    // Không tự động mở video, chỉ tải đường dẫn thư mục
     m_lastUsedDir = settings.value("lastUsedDir", QDir::homePath()).toString();
 }
 
@@ -346,7 +343,8 @@ void MainWindow::setupRightPanel(QWidget *parent)
     m_libraryWidget->setViewMode(QListWidget::IconMode);
     m_libraryWidget->setIconSize(QSize(128, 72));
     m_libraryWidget->setWordWrap(true);
-    m_libraryWidget->setSpacing(1);
+    m_libraryWidget->setSpacing(0);
+    m_libraryWidget->setStyleSheet("QListWidget::item { padding: 1px; margin: 0px; border: 0px; }");
     connect(m_libraryWidget, &LibraryWidget::itemQuickExportRequested, this, &MainWindow::onLibraryItemQuickExport);
 
     m_viewAndCropButton = new QPushButton("Xem");
@@ -550,7 +548,6 @@ void MainWindow::setupRightPanel(QWidget *parent)
 
 void MainWindow::onFileOpened(bool success, VideoProcessor::AudioParams params, double frameRate, qint64 duration, AVRational timeBase)
 {
-    // SỬA LỖI: Kích hoạt các nút khi mở video thành công
     updatePlayerState(success);
 
     if (success) {
@@ -570,6 +567,12 @@ void MainWindow::onFileOpened(bool success, VideoProcessor::AudioParams params, 
                  QMessageBox::warning(this, "Lỗi Âm thanh", "Không tìm thấy thiết bị âm thanh mặc định.");
             } else {
                 m_audioSink = new QAudioSink(devices, format);
+                
+                // SỬA LỖI ÂM THANH: Tăng kích thước buffer để tránh giật
+                // Buffer cho khoảng 200ms âm thanh (sample_rate * channels * bytes_per_sample * seconds)
+                int bufferSize = params.sample_rate * params.channels * (16 / 8) * 0.2; 
+                m_audioSink->setBufferSize(bufferSize);
+
                 m_audioDevice = m_audioSink->start();
                 onVolumeChanged(m_volumeSlider->value());
             }
@@ -669,7 +672,6 @@ void MainWindow::openVideoFile(const QString& filePath)
 
 void MainWindow::onOpenFile()
 {
-    // Sử dụng thư mục đã lưu từ lần trước
     QString path = QFileDialog::getOpenFileName(this, "Mở file video", m_lastUsedDir, "Video Files (*.mp4 *.avi *.mkv *.mov)");
     if (!path.isEmpty()) {
         openVideoFile(path);
@@ -722,7 +724,6 @@ void MainWindow::onTimelineReleased()
 
 void MainWindow::onCapture()
 {
-    // Tự động mở panel bên phải nếu đang đóng
     ensureRightPanelVisible();
 
     QImage currentFrame = m_videoWidget->getCurrentImage();
@@ -733,10 +734,9 @@ void MainWindow::onCapture()
         if (currentFrame.save(filePath, "PNG")) {
             m_capturedFramePaths.append(filePath);
             
-            // SỬA LỖI: Viết lại logic tạo thumbnail để đảm bảo hiển thị đúng
             QImage scaledImage = currentFrame.scaled(m_libraryWidget->iconSize(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
             QPixmap thumbnailPixmap(m_libraryWidget->iconSize());
-            thumbnailPixmap.fill(Qt::transparent); // Nền trong suốt
+            thumbnailPixmap.fill(Qt::transparent);
             QPainter painter(&thumbnailPixmap);
             int x = (thumbnailPixmap.width() - scaledImage.width()) / 2;
             int y = (thumbnailPixmap.height() - scaledImage.height()) / 2;

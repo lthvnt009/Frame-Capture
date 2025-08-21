@@ -1,31 +1,25 @@
-// libraryitemdelegate.cpp - Version 1.3 (Magic Numbers Removed)
+// libraryitemdelegate.cpp - Version 1.6 (UI Tweaks)
 #include "libraryitemdelegate.h"
 #include <QPainter>
 #include <QApplication>
 #include <QMouseEvent>
 #include <QStyleOptionViewItem>
 #include <QIcon>
+#include <QListView>
 
 LibraryItemDelegate::LibraryItemDelegate(QObject *parent) : QStyledItemDelegate(parent) {}
 
-QRect LibraryItemDelegate::getPixmapRect(const QStyleOptionViewItem &option) const
-{
-    QIcon icon = qvariant_cast<QIcon>(option.index.data(Qt::DecorationRole));
-    // Giảm padding để ảnh lớn hơn một chút
-    QRect contentRect = option.rect.adjusted(1, 1, -1, -1);
-    QPixmap pixmap = icon.pixmap(contentRect.size(), QIcon::Normal, QIcon::On);
-    
-    int pixmapX = contentRect.x() + (contentRect.width() - pixmap.width()) / 2;
-    int pixmapY = contentRect.y() + (contentRect.height() - pixmap.height()) / 2;
-    return QRect(pixmapX, pixmapY, pixmap.width(), pixmap.height());
-}
-
 QRect LibraryItemDelegate::getCheckBoxRect(const QStyleOptionViewItem &option) const
 {
-    QRect pixmapRect = getPixmapRect(option);
-    // THAY ĐỔI: Sử dụng hằng số thay vì "magic numbers"
-    int size = CHECKBOX_SIZE;
-    int margin = CHECKBOX_MARGIN;
+    const QListView *view = qobject_cast<const QListView*>(option.widget);
+    QSize iconSize = view ? view->iconSize() : QSize(128, 72);
+
+    int pixmapX = option.rect.x() + (option.rect.width() - iconSize.width()) / 2;
+    int pixmapY = option.rect.y() + (option.rect.height() - iconSize.height()) / 2;
+    QRect pixmapRect(pixmapX, pixmapY, iconSize.width(), iconSize.height());
+    
+    int size = LibraryItemDelegate::CHECKBOX_SIZE;
+    int margin = LibraryItemDelegate::CHECKBOX_MARGIN;
     return QRect(pixmapRect.left() + margin, pixmapRect.bottom() - size - margin, size, size);
 }
 
@@ -39,20 +33,25 @@ void LibraryItemDelegate::paint(QPainter *painter, const QStyleOptionViewItem &o
     }
 
     QIcon icon = qvariant_cast<QIcon>(index.data(Qt::DecorationRole));
-    Qt::CheckState checkState = static_cast<Qt::CheckState>(index.data(Qt::CheckStateRole).toInt());
-    
-    // Vẽ thumbnail
-    QRect pixmapRect = getPixmapRect(option);
-    painter->drawPixmap(pixmapRect.topLeft(), icon.pixmap(pixmapRect.size()));
+    const QListView *view = qobject_cast<const QListView*>(option.widget);
+    QSize iconSize = view ? view->iconSize() : QSize(128, 72);
 
-    // Vẽ checkbox
+    QPixmap pixmap = icon.pixmap(iconSize);
+
+    int x = option.rect.x() + (option.rect.width() - pixmap.width()) / 2;
+    int y = option.rect.y() + (option.rect.height() - pixmap.height()) / 2;
+    
+    if (!pixmap.isNull()) {
+        painter->drawPixmap(x, y, pixmap);
+    }
+    
+    Qt::CheckState checkState = static_cast<Qt::CheckState>(index.data(Qt::CheckStateRole).toInt());
     QRect checkBoxRect = getCheckBoxRect(option);
     
-    // Vẽ nền mờ cho checkbox để dễ nhìn
-    painter->setBrush(QColor(0, 0, 0, 100));
-    painter->setPen(Qt::NoPen);
-    // THAY ĐỔI: Sử dụng hằng số
-    painter->drawRoundedRect(checkBoxRect.adjusted(-CHECKBOX_BG_PADDING, -CHECKBOX_BG_PADDING, CHECKBOX_BG_PADDING, CHECKBOX_BG_PADDING), CHECKBOX_BG_RADIUS, CHECKBOX_BG_RADIUS);
+    // TINH CHỈNH: Đã loại bỏ phần vẽ nền cho checkbox
+    // painter->setBrush(QColor(0, 0, 0, 100));
+    // painter->setPen(Qt::NoPen);
+    // painter->drawRoundedRect(...);
 
     QStyleOptionButton checkBoxOpt;
     checkBoxOpt.rect = checkBoxRect;

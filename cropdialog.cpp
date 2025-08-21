@@ -1,4 +1,4 @@
-// cropdialog.cpp - Version 4.3 (Button Order Fixed)
+// cropdialog.cpp - Version 4.4 (Button Order Fixed & UI Tweaks)
 #include "cropdialog.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -427,13 +427,19 @@ void CropDialog::setupUi()
     controlsLayout->addWidget(zoomBox);
     mainLayout->addLayout(controlsLayout);
 
-    // SỬA LỖI: Đảm bảo đúng thứ tự nút
-    QDialogButtonBox *buttonBox = new QDialogButtonBox();
-    QPushButton *okButton = buttonBox->addButton("OK", QDialogButtonBox::AcceptRole);
-    QPushButton *cancelButton = buttonBox->addButton("Huỷ", QDialogButtonBox::RejectRole);
-    QPushButton *exportButton = buttonBox->addButton("Xuất ảnh", QDialogButtonBox::ActionRole);
+    // TINH CHỈNH: Thay thế QDialogButtonBox bằng QHBoxLayout để đảm bảo thứ tự
+    QHBoxLayout *buttonLayout = new QHBoxLayout();
+    buttonLayout->addStretch(); // Đẩy các nút về bên phải
+
+    QPushButton *okButton = new QPushButton("OK");
+    QPushButton *cancelButton = new QPushButton("Huỷ");
+    QPushButton *exportButton = new QPushButton("Xuất ảnh");
     exportButton->setToolTip("Lưu ảnh hiện tại ra file và đóng cửa sổ");
     exportButton->setStyleSheet("background-color: #e67e22; color: white; border: none; padding: 5px; border-radius: 3px;");
+
+    buttonLayout->addWidget(okButton);
+    buttonLayout->addWidget(cancelButton);
+    buttonLayout->addWidget(exportButton);
     
     connect(m_ratioGroup, &QButtonGroup::idToggled, this, &CropDialog::onAspectRatioChanged);
     connect(m_customWidthSpinBox, &QSpinBox::valueChanged, this, &CropDialog::updateCustomValues);
@@ -442,10 +448,13 @@ void CropDialog::setupUi()
     connect(m_ratioHEdit, &QLineEdit::textChanged, this, &CropDialog::updateCustomValues);
     connect(fitButton, &QPushButton::clicked, this, &CropDialog::fitToWindow);
     connect(oneToOneButton, &QPushButton::clicked, this, &CropDialog::oneToOne);
-    connect(buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
+    
+    // Kết nối tín hiệu cho các nút mới
+    connect(okButton, &QPushButton::clicked, this, &QDialog::accept);
+    connect(cancelButton, &QPushButton::clicked, this, &QDialog::reject);
     connect(exportButton, &QPushButton::clicked, this, &CropDialog::exportImage);
-    connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
-    mainLayout->addWidget(buttonBox);
+    
+    mainLayout->addLayout(buttonLayout); // Thêm layout nút vào layout chính
 }
 
 void CropDialog::onAspectRatioChanged(int id, bool checked)
