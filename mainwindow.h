@@ -1,4 +1,4 @@
-// mainwindow.h - Version 3.9 (Timeline Hover)
+// mainwindow.h - Version 4.2 (State Management Added)
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
@@ -79,7 +79,7 @@ protected:
     void dropEvent(QDropEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
-    bool eventFilter(QObject *watched, QEvent *event) override; // THÊM MỚI
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private slots:
     // Slots nhận tín hiệu từ Worker Thread
@@ -122,6 +122,11 @@ private slots:
     void onCornerRadiusSliderChanged(int value);
     void onBorderSliderChanged(int value);
 
+    // Slots xử lý kết quả từ luồng nền
+    void onFileDeletionFinished(bool success, const QString& filePath, QListWidgetItem* item);
+    void onCroppedImageSaveFinished(bool success, const QString& filePath, const QImage& savedImage);
+
+
 private:
     void setupUi();
     void setupLeftPanel(QWidget *parent);
@@ -135,10 +140,11 @@ private:
     QWidget* createVerticalSpinBox(QSpinBox* spinbox);
     void updateTimeLabel(int64_t currentTimeUs, int64_t totalTimeUs);
     void updateUIWithFrame(const FrameData& frameData);
-    QString formatTime(int64_t timeUs);
-    void updateAllLibraryItemIndices();
     void cleanupAudio();
     QString generateUniqueFilename(const QString& baseName, const QString& extension);
+    void ensureRightPanelVisible();
+    QString formatTime(int64_t timeUs);
+    void updatePlayerState(bool isVideoLoaded); // THÊM MỚI: Hàm quản lý trạng thái
 
     // Layout
     QSplitter *mainSplitter;
@@ -194,6 +200,7 @@ private:
     QList<QString> m_capturedFramePaths;
     QString m_currentVideoPath;
     QString m_tempPath;
+    QString m_lastUsedDir;
 
     // Video Info (lấy từ worker)
     double m_frameRate = 0.0;

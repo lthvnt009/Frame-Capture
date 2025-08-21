@@ -1,11 +1,14 @@
-// videoworker.cpp - Version 1.1 (Fixed signal/slot mismatch)
+// videoworker.cpp - Version 1.2 (Modernized with std::unique_ptr)
 #include "videoworker.h"
 #include <QDebug>
 #include <QThread>
 
+// THAY ĐỔI: Không cần include <memory> ở đây vì đã có trong file .h
+
 VideoWorker::VideoWorker(QObject *parent) : QObject(parent)
 {
-    m_processor = new VideoProcessor();
+    // THAY ĐỔI: Khởi tạo m_processor bằng std::make_unique
+    m_processor = std::make_unique<VideoProcessor>();
     m_playbackTimer = new QTimer(this);
     connect(m_playbackTimer, &QTimer::timeout, this, &VideoWorker::onPlaybackTimerTimeout);
 }
@@ -13,7 +16,7 @@ VideoWorker::VideoWorker(QObject *parent) : QObject(parent)
 VideoWorker::~VideoWorker()
 {
     m_playbackTimer->stop();
-    delete m_processor;
+    // THAY ĐỔI: Không cần "delete m_processor;" nữa, std::unique_ptr sẽ tự động giải phóng bộ nhớ.
 }
 
 void VideoWorker::processOpenFile(const QString &filePath)
@@ -23,18 +26,15 @@ void VideoWorker::processOpenFile(const QString &filePath)
         VideoProcessor::AudioParams params = m_processor->getAudioParams();
         double frameRate = m_processor->getFrameRate();
         qint64 duration = m_processor->getDuration();
-        // SỬA LỖI: Lấy timeBase và gửi đi cùng signal
         AVRational timeBase = m_processor->getTimeBase();
         emit fileOpened(true, params, frameRate, duration, timeBase);
 
-        // Tự động phát frame đầu tiên
         FrameData firstFrame = m_processor->seekAndDecode(0);
         if(!firstFrame.image.isNull()) {
             m_currentPts = firstFrame.pts;
             emit frameReady(firstFrame);
         }
     } else {
-        // SỬA LỖI: Gửi đi một timeBase rỗng
         emit fileOpened(false, {}, 0.0, 0, {0, 1});
     }
 }
@@ -63,13 +63,13 @@ void VideoWorker::processPlayPause(bool play)
 
 void VideoWorker::processNextFrame()
 {
-    if (m_isPlaying) return; // Chỉ cho phép khi đang pause
+    if (m_isPlaying) return;
     onPlaybackTimerTimeout();
 }
 
 void VideoWorker::processPrevFrame()
 {
-    if (m_isPlaying) return; // Chỉ cho phép khi đang pause
+    if (m_isPlaying) return;
 
     AVRational timeBase = m_processor->getTimeBase();
     if (timeBase.den == 0) return;
@@ -104,7 +104,6 @@ void VideoWorker::onPlaybackTimerTimeout()
         m_currentPts = frame.pts;
         emit frameReady(frame);
     } else {
-        // Video kết thúc
         m_isPlaying = false;
         m_playbackTimer->stop();
     }

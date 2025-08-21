@@ -1,4 +1,4 @@
-// mainwindow.cpp - Version 5.6 (Thumbnail Fix & Final Polish)
+// mainwindow.cpp - Version 6.0 (Final Fixes & State Management)
 #include "mainwindow.h"
 #include "videowidget.h"
 #include "viewpanel.h"
@@ -50,22 +50,39 @@
 #include <QSettings>
 #include <QCloseEvent>
 #include <QToolTip>
+#include <QtConcurrent/QtConcurrent>
+#include <QThreadPool>
+#include <QPainter> // Thêm vào để vẽ thumbnail
 
 // Đăng ký các kiểu dữ liệu để có thể truyền qua signal-slot
 Q_DECLARE_METATYPE(VideoProcessor::AudioParams)
 Q_DECLARE_METATYPE(AVRational)
+Q_DECLARE_METATYPE(QListWidgetItem*)
+
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
     qRegisterMetaType<VideoProcessor::AudioParams>();
     qRegisterMetaType<AVRational>();
+    qRegisterMetaType<QListWidgetItem*>();
 
     setupUi();
     setupVideoWorker();
     setupTempDirectory();
     loadSettings();
     setAcceptDrops(true);
+
+    // Khởi động với panel bên phải được thu gọn
+    QTimer::singleShot(0, this, [this]() {
+        if (!m_toggleRightPanelButton->isChecked()) {
+            m_toggleRightPanelButton->setChecked(true);
+            onToggleRightPanel();
+        }
+    });
+
+    // SỬA LỖI: Vô hiệu hóa các nút khi chưa có video
+    updatePlayerState(false);
 }
 
 MainWindow::~MainWindow()
@@ -110,7 +127,10 @@ void MainWindow::saveSettings()
     settings.setValue("geometry", saveGeometry());
     settings.setValue("windowState", saveState());
     settings.setValue("splitterState", mainSplitter->saveState());
-    settings.setValue("lastVideoPath", m_currentVideoPath);
+    // Chỉ lưu thư mục cuối cùng, không lưu đường dẫn file
+    if (!m_currentVideoPath.isEmpty()) {
+        settings.setValue("lastUsedDir", QFileInfo(m_currentVideoPath).absolutePath());
+    }
 }
 
 void MainWindow::loadSettings()
@@ -124,10 +144,8 @@ void MainWindow::loadSettings()
         mainSplitter->restoreState(splitterState);
     }
 
-    QString lastVideoPath = settings.value("lastVideoPath").toString();
-    if (!lastVideoPath.isEmpty() && QFile::exists(lastVideoPath)) {
-        openVideoFile(lastVideoPath);
-    }
+    // Không tự động mở video, chỉ tải đường dẫn thư mục
+    m_lastUsedDir = settings.value("lastUsedDir", QDir::homePath()).toString();
 }
 
 void MainWindow::setupTempDirectory()
@@ -532,6 +550,9 @@ void MainWindow::setupRightPanel(QWidget *parent)
 
 void MainWindow::onFileOpened(bool success, VideoProcessor::AudioParams params, double frameRate, qint64 duration, AVRational timeBase)
 {
+    // SỬA LỖI: Kích hoạt các nút khi mở video thành công
+    updatePlayerState(success);
+
     if (success) {
         m_frameRate = frameRate;
         m_duration = duration;
@@ -566,6 +587,14 @@ void MainWindow::onFrameReady(const FrameData &frameData)
 
 // --- Các slot xử lý sự kiện UI ---
 
+void MainWindow::ensureRightPanelVisible()
+{
+    if (m_toggleRightPanelButton->isChecked()) { // isChecked() là true khi nó đang ở trạng thái thu gọn
+        m_toggleRightPanelButton->setChecked(false);
+        onToggleRightPanel();
+    }
+}
+
 void MainWindow::onToggleRightPanel()
 {
     QList<int> sizes = mainSplitter->sizes();
@@ -574,7 +603,7 @@ void MainWindow::onToggleRightPanel()
             mainSplitter->setSizes({sizes[0] + sizes[1], 0});
             m_toggleRightPanelButton->setIcon(style()->standardIcon(QStyle::SP_ArrowRight));
         } else {
-            mainSplitter->setSizes({width() / 2, width() / 2});
+            mainSplitter->setSizes({width() * 2 / 3, width() / 3}); // Tỉ lệ 2:1 hợp lý hơn
             m_toggleRightPanelButton->setIcon(style()->standardIcon(QStyle::SP_ArrowLeft));
         }
     }
@@ -640,7 +669,8 @@ void MainWindow::openVideoFile(const QString& filePath)
 
 void MainWindow::onOpenFile()
 {
-    QString path = QFileDialog::getOpenFileName(this, "Mở file video", "", "Video Files (*.mp4 *.avi *.mkv *.mov)");
+    // Sử dụng thư mục đã lưu từ lần trước
+    QString path = QFileDialog::getOpenFileName(this, "Mở file video", m_lastUsedDir, "Video Files (*.mp4 *.avi *.mkv *.mov)");
     if (!path.isEmpty()) {
         openVideoFile(path);
     }
@@ -692,6 +722,9 @@ void MainWindow::onTimelineReleased()
 
 void MainWindow::onCapture()
 {
+    // Tự động mở panel bên phải nếu đang đóng
+    ensureRightPanelVisible();
+
     QImage currentFrame = m_videoWidget->getCurrentImage();
     if (!currentFrame.isNull()) {
         QString fileName = QUuid::createUuid().toString() + ".png";
@@ -700,10 +733,16 @@ void MainWindow::onCapture()
         if (currentFrame.save(filePath, "PNG")) {
             m_capturedFramePaths.append(filePath);
             
-            // SỬA LỖI: Tạo thumbnail từ QImage trong bộ nhớ, không đọc lại từ đĩa
-            QImage thumbnailImage = currentFrame.scaled(m_libraryWidget->iconSize(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
-            QPixmap thumbnailPixmap = QPixmap::fromImage(thumbnailImage);
-
+            // SỬA LỖI: Viết lại logic tạo thumbnail để đảm bảo hiển thị đúng
+            QImage scaledImage = currentFrame.scaled(m_libraryWidget->iconSize(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            QPixmap thumbnailPixmap(m_libraryWidget->iconSize());
+            thumbnailPixmap.fill(Qt::transparent); // Nền trong suốt
+            QPainter painter(&thumbnailPixmap);
+            int x = (thumbnailPixmap.width() - scaledImage.width()) / 2;
+            int y = (thumbnailPixmap.height() - scaledImage.height()) / 2;
+            painter.drawImage(x, y, scaledImage);
+            painter.end();
+            
             QListWidgetItem *item = new QListWidgetItem(QIcon(thumbnailPixmap), "");
             item->setData(Qt::UserRole, filePath); 
             item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
@@ -770,12 +809,33 @@ void MainWindow::onViewAndCropSelected()
         
         if (dialog.exec() == QDialog::Accepted) {
             QImage finalImage = dialog.getFinalImage();
-            if (!finalImage.isNull() && finalImage.save(filePath, "PNG")) {
-                QPixmap thumbnail = QPixmap::fromImage(finalImage.scaled(m_libraryWidget->iconSize(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
-                item->setIcon(QIcon(thumbnail));
-                onLibraryItemChanged(item);
+            if (!finalImage.isNull()) {
+                QThreadPool::globalInstance()->start([this, filePath, finalImage]() {
+                    bool success = finalImage.save(filePath, "PNG");
+                    QMetaObject::invokeMethod(this, "onCroppedImageSaveFinished", Qt::QueuedConnection,
+                                              Q_ARG(bool, success),
+                                              Q_ARG(QString, filePath),
+                                              Q_ARG(QImage, finalImage));
+                });
             }
         }
+    }
+}
+
+void MainWindow::onCroppedImageSaveFinished(bool success, const QString& filePath, const QImage& savedImage)
+{
+    if (success) {
+        for (int i = 0; i < m_libraryWidget->count(); ++i) {
+            QListWidgetItem* item = m_libraryWidget->item(i);
+            if (item->data(Qt::UserRole).toString() == filePath) {
+                QPixmap thumbnail = QPixmap::fromImage(savedImage.scaled(m_libraryWidget->iconSize(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+                item->setIcon(QIcon(thumbnail));
+                onLibraryItemChanged(item);
+                break;
+            }
+        }
+    } else {
+        QMessageBox::critical(this, "Lỗi", "Không thể lưu ảnh đã cắt.");
     }
 }
 
@@ -787,15 +847,27 @@ void MainWindow::onDeleteSelected()
     int ret = QMessageBox::question(this, "Xác nhận xoá", "Bạn có chắc muốn xoá ảnh đã chọn?", QMessageBox::Yes | QMessageBox::No);
 
     if (ret == QMessageBox::Yes) {
-        int rowToDelete = m_libraryWidget->row(selected.first());
-        QListWidgetItem* item = m_libraryWidget->takeItem(rowToDelete);
+        QListWidgetItem* item = selected.first();
         QString filePath = item->data(Qt::UserRole).toString();
         
+        QThreadPool::globalInstance()->start([this, filePath, item]() {
+            bool success = QFile::remove(filePath);
+            QMetaObject::invokeMethod(this, "onFileDeletionFinished", Qt::QueuedConnection,
+                                      Q_ARG(bool, success),
+                                      Q_ARG(QString, filePath),
+                                      Q_ARG(QListWidgetItem*, item));
+        });
+    }
+}
+
+void MainWindow::onFileDeletionFinished(bool success, const QString& filePath, QListWidgetItem* item)
+{
+    if (success) {
         m_capturedFramePaths.removeOne(filePath);
-        QFile::remove(filePath);
-        
-        delete item;
+        delete m_libraryWidget->takeItem(m_libraryWidget->row(item));
         onLibraryItemChanged(nullptr);
+    } else {
+        QMessageBox::critical(this, "Lỗi", "Không thể xoá file: " + filePath);
     }
 }
 
@@ -927,11 +999,6 @@ QString MainWindow::formatTime(int64_t timeUs)
         return QString("%1:%2.%3").arg(minutes, 2, 10, QChar('0')).arg(seconds, 2, 10, QChar('0')).arg(milliseconds, 3, 10, QChar('0'));
 }
 
-void MainWindow::updateAllLibraryItemIndices() 
-{
-    // This function is no longer needed as we use file paths directly
-}
-
 void MainWindow::cleanupAudio()
 {
     if(m_audioSink) {
@@ -992,4 +1059,17 @@ void MainWindow::onChooseBackgroundColor()
         pal.setColor(QPalette::Window, color);
         m_colorSwatch->setPalette(pal);
     }
+}
+
+// THÊM MỚI: Hàm quản lý trạng thái các nút
+void MainWindow::updatePlayerState(bool isVideoLoaded)
+{
+    m_playPauseButton->setEnabled(isVideoLoaded);
+    m_nextFrameButton->setEnabled(isVideoLoaded);
+    m_prevFrameButton->setEnabled(isVideoLoaded);
+    m_timelineSlider->setEnabled(isVideoLoaded);
+    m_captureButton->setEnabled(isVideoLoaded);
+    m_captureAndExportButton->setEnabled(isVideoLoaded);
+    m_captureExportAction->setEnabled(isVideoLoaded);
+    m_exportButton->setEnabled(isVideoLoaded);
 }

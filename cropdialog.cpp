@@ -1,4 +1,4 @@
-// cropdialog.cpp - Version 4.1 (Button Order Fix)
+// cropdialog.cpp - Version 4.3 (Button Order Fixed)
 #include "cropdialog.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -427,10 +427,10 @@ void CropDialog::setupUi()
     controlsLayout->addWidget(zoomBox);
     mainLayout->addLayout(controlsLayout);
 
-    // THAY ĐỔI: Sửa lại thứ tự nút
+    // SỬA LỖI: Đảm bảo đúng thứ tự nút
     QDialogButtonBox *buttonBox = new QDialogButtonBox();
-    buttonBox->addButton("OK", QDialogButtonBox::AcceptRole);
-    buttonBox->addButton("Huỷ", QDialogButtonBox::RejectRole);
+    QPushButton *okButton = buttonBox->addButton("OK", QDialogButtonBox::AcceptRole);
+    QPushButton *cancelButton = buttonBox->addButton("Huỷ", QDialogButtonBox::RejectRole);
     QPushButton *exportButton = buttonBox->addButton("Xuất ảnh", QDialogButtonBox::ActionRole);
     exportButton->setToolTip("Lưu ảnh hiện tại ra file và đóng cửa sổ");
     exportButton->setStyleSheet("background-color: #e67e22; color: white; border: none; padding: 5px; border-radius: 3px;");
@@ -513,6 +513,9 @@ void CropDialog::applyCrop()
     QImage oldImage = m_currentImage;
     QImage newImage = oldImage.copy(selection);
     m_undoStack->push(new ApplyCropCommand(&m_currentImage, m_cropArea, oldImage, newImage));
+
+    // Tự động căn giữa và thu phóng lại ảnh sau khi cắt
+    fitToWindow();
 }
 
 void CropDialog::exportImage()

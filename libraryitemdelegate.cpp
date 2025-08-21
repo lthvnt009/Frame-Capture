@@ -1,4 +1,4 @@
-// libraryitemdelegate.cpp - Version 1.2
+// libraryitemdelegate.cpp - Version 1.3 (Magic Numbers Removed)
 #include "libraryitemdelegate.h"
 #include <QPainter>
 #include <QApplication>
@@ -11,7 +11,8 @@ LibraryItemDelegate::LibraryItemDelegate(QObject *parent) : QStyledItemDelegate(
 QRect LibraryItemDelegate::getPixmapRect(const QStyleOptionViewItem &option) const
 {
     QIcon icon = qvariant_cast<QIcon>(option.index.data(Qt::DecorationRole));
-    QRect contentRect = option.rect.adjusted(1, 1, -1, -1); // Giảm padding để ảnh lớn hơn một chút
+    // Giảm padding để ảnh lớn hơn một chút
+    QRect contentRect = option.rect.adjusted(1, 1, -1, -1);
     QPixmap pixmap = icon.pixmap(contentRect.size(), QIcon::Normal, QIcon::On);
     
     int pixmapX = contentRect.x() + (contentRect.width() - pixmap.width()) / 2;
@@ -22,8 +23,9 @@ QRect LibraryItemDelegate::getPixmapRect(const QStyleOptionViewItem &option) con
 QRect LibraryItemDelegate::getCheckBoxRect(const QStyleOptionViewItem &option) const
 {
     QRect pixmapRect = getPixmapRect(option);
-    int size = 16;
-    int margin = 3;
+    // THAY ĐỔI: Sử dụng hằng số thay vì "magic numbers"
+    int size = CHECKBOX_SIZE;
+    int margin = CHECKBOX_MARGIN;
     return QRect(pixmapRect.left() + margin, pixmapRect.bottom() - size - margin, size, size);
 }
 
@@ -49,7 +51,8 @@ void LibraryItemDelegate::paint(QPainter *painter, const QStyleOptionViewItem &o
     // Vẽ nền mờ cho checkbox để dễ nhìn
     painter->setBrush(QColor(0, 0, 0, 100));
     painter->setPen(Qt::NoPen);
-    painter->drawRoundedRect(checkBoxRect.adjusted(-2, -2, 2, 2), 2, 2);
+    // THAY ĐỔI: Sử dụng hằng số
+    painter->drawRoundedRect(checkBoxRect.adjusted(-CHECKBOX_BG_PADDING, -CHECKBOX_BG_PADDING, CHECKBOX_BG_PADDING, CHECKBOX_BG_PADDING), CHECKBOX_BG_RADIUS, CHECKBOX_BG_RADIUS);
 
     QStyleOptionButton checkBoxOpt;
     checkBoxOpt.rect = checkBoxRect;
