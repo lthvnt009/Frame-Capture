@@ -1,4 +1,4 @@
-// cropdialog.cpp - Version 4.4 (Button Order Fixed & UI Tweaks)
+// cropdialog.cpp - Version 4.8 (Arrow Key Fix & Size Display)
 #include "cropdialog.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -30,6 +30,7 @@
 CropArea::CropArea(QWidget *parent) : QWidget(parent)
 {
     setMouseTracking(true);
+    setFocusPolicy(Qt::StrongFocus);
     m_selectionRect = QRectF();
     
     m_animationTimer = new QTimer(this);
@@ -41,6 +42,7 @@ void CropArea::setImage(const QImage &image)
 {
     m_image = image;
     setFixedSize(m_image.size());
+    emit selectionSizeChanged(m_image.size());
     update();
 }
 
@@ -52,6 +54,7 @@ QRect CropArea::getSelection() const
 void CropArea::clearSelection()
 {
     m_selectionRect = QRectF();
+    emitSelectionSize();
     update();
 }
 
@@ -61,6 +64,7 @@ void CropArea::setAspectRatio(double ratio)
     if (m_aspectRatio > 0 && m_selectionRect.isValid()) {
         m_selectionRect.setHeight(m_selectionRect.width() / m_aspectRatio);
     }
+    emitSelectionSize();
     update();
 }
 
@@ -73,6 +77,32 @@ void CropArea::setScale(double newScale)
     emit scaleChanged(m_scale);
     update();
 }
+
+void CropArea::moveSelection(int dx, int dy)
+{
+    if (m_selectionRect.isValid()) {
+        m_selectionRect.translate(dx, dy);
+
+        QRectF imageBounds = m_image.rect();
+        if (m_selectionRect.left() < imageBounds.left()) m_selectionRect.moveLeft(imageBounds.left());
+        if (m_selectionRect.right() > imageBounds.right()) m_selectionRect.moveRight(imageBounds.right());
+        if (m_selectionRect.top() < imageBounds.top()) m_selectionRect.moveTop(imageBounds.top());
+        if (m_selectionRect.bottom() > imageBounds.bottom()) m_selectionRect.moveBottom(imageBounds.bottom());
+        
+        emitSelectionSize();
+        update();
+    }
+}
+
+void CropArea::emitSelectionSize()
+{
+    if (m_selectionRect.isValid() && !m_selectionRect.isEmpty()) {
+        emit selectionSizeChanged(m_selectionRect.size().toSize());
+    } else {
+        emit selectionSizeChanged(m_image.size());
+    }
+}
+
 
 void CropArea::animateSelectionBorder()
 {
@@ -205,6 +235,7 @@ void CropArea::resizeSelection(const QPointF &pos)
     }
 
     m_dragStartPos = pos;
+    emitSelectionSize();
     update();
 }
 
@@ -278,6 +309,8 @@ CropDialog::CropDialog(const QImage &image, QWidget *parent)
     m_cropArea->setImage(m_currentImage);
     setWindowTitle("Xem & Cắt ảnh"); 
     resize(800, 600);
+    // SỬA LỖI FOCUS: Cài đặt bộ lọc sự kiện
+    this->installEventFilter(this);
 }
 
 QImage CropDialog::getFinalImage() const
@@ -285,18 +318,54 @@ QImage CropDialog::getFinalImage() const
     return m_currentImage;
 }
 
+// SỬA LỖI FOCUS: Ghi đè eventFilter để bắt phím bấm
+bool CropDialog::eventFilter(QObject *watched, QEvent *event)
+{
+    if (event->type() == QEvent::KeyPress) {
+        QKeyEvent *keyEvent = static_cast<QKeyEvent*>(event);
+        // Chuyển sự kiện phím bấm tới hàm keyPressEvent để xử lý
+        keyPressEvent(keyEvent);
+        // Trả về true để báo rằng sự kiện đã được xử lý
+        return true; 
+    }
+    // Chuyển các sự kiện khác cho lớp cơ sở
+    return QDialog::eventFilter(watched, event);
+}
+
+
 void CropDialog::keyPressEvent(QKeyEvent *event)
 {
-    if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
+    int step = (event->modifiers() & Qt::ShiftModifier) ? 10 : 1;
+
+    switch (event->key()) {
+    case Qt::Key_Up:
+        m_cropArea->moveSelection(0, -step);
+        break;
+    case Qt::Key_Down:
+        m_cropArea->moveSelection(0, step);
+        break;
+    case Qt::Key_Left:
+        m_cropArea->moveSelection(-step, 0);
+        break;
+    case Qt::Key_Right:
+        m_cropArea->moveSelection(step, 0);
+        break;
+    case Qt::Key_Return:
+    case Qt::Key_Enter:
         applyCrop();
-    } else {
-        QDialog::keyPressEvent(event);
+        break;
+    default:
+        // Không gọi QDialog::keyPressEvent để tránh các hành vi mặc định không mong muốn
+        event->ignore();
+        break;
     }
 }
+
 
 void CropDialog::showEvent(QShowEvent *event)
 {
     QDialog::showEvent(event);
+    m_cropArea->setFocus();
     fitToWindow();
 }
 
@@ -317,6 +386,7 @@ void CropDialog::setupUi()
 
     m_cropArea = new CropArea(this);
     connect(m_cropArea, &CropArea::scaleChanged, this, &CropDialog::updateScaleLabel);
+    connect(m_cropArea, &CropArea::selectionSizeChanged, this, &CropDialog::updateSizeLabel);
     m_scrollArea = new QScrollArea(this);
     m_scrollArea->setAlignment(Qt::AlignCenter);
     m_scrollArea->setWidget(m_cropArea);
@@ -406,20 +476,30 @@ void CropDialog::setupUi()
     connect(m_sizeSubRadio, &QRadioButton::toggled, this, &CropDialog::updateCustomValues);
 
     QGroupBox *zoomBox = new QGroupBox("Thu phóng");
+    zoomBox->setToolTip("Các công cụ để điều chỉnh góc nhìn");
     QHBoxLayout *zoomLayout = new QHBoxLayout(zoomBox);
-    QPushButton *fitButton = new QPushButton("Phóng");
-    fitButton->setToolTip("Thu phóng ảnh vừa với khung xem");
+    QPushButton *fitButton = new QPushButton("Vừa khung");
+    fitButton->setToolTip("Thu phóng ảnh vừa với khung xem (95%)");
     QPushButton *oneToOneButton = new QPushButton("1:1");
-    oneToOneButton->setToolTip("Xem ảnh với kích thước thật");
+    oneToOneButton->setToolTip("Xem ảnh với kích thước thật (100%)");
     m_scaleLabel = new QLineEdit("100%");
     m_scaleLabel->setReadOnly(true);
     m_scaleLabel->setAlignment(Qt::AlignCenter);
     m_scaleLabel->setFixedSize(50, 22);
     m_scaleLabel->setToolTip("Tỉ lệ phóng hiện tại");
     m_scaleLabel->setStyleSheet("background-color: #2c3e50; color: white; border: 1px solid #606060; selection-background-color: transparent;");
+    
+    m_sizeLabel = new QLineEdit("1920x1080");
+    m_sizeLabel->setReadOnly(true);
+    m_sizeLabel->setAlignment(Qt::AlignCenter);
+    m_sizeLabel->setFixedWidth(80);
+    m_sizeLabel->setToolTip("Kích thước vùng chọn (pixel)");
+    m_sizeLabel->setStyleSheet("background-color: #2c3e50; color: white; border: 1px solid #606060; selection-background-color: transparent;");
+
     zoomLayout->addWidget(fitButton);
     zoomLayout->addWidget(oneToOneButton);
     zoomLayout->addWidget(m_scaleLabel);
+    zoomLayout->addWidget(m_sizeLabel);
 
     QHBoxLayout *controlsLayout = new QHBoxLayout();
     controlsLayout->addWidget(ratioBox);
@@ -427,9 +507,8 @@ void CropDialog::setupUi()
     controlsLayout->addWidget(zoomBox);
     mainLayout->addLayout(controlsLayout);
 
-    // TINH CHỈNH: Thay thế QDialogButtonBox bằng QHBoxLayout để đảm bảo thứ tự
     QHBoxLayout *buttonLayout = new QHBoxLayout();
-    buttonLayout->addStretch(); // Đẩy các nút về bên phải
+    buttonLayout->addStretch(); 
 
     QPushButton *okButton = new QPushButton("OK");
     QPushButton *cancelButton = new QPushButton("Huỷ");
@@ -449,12 +528,11 @@ void CropDialog::setupUi()
     connect(fitButton, &QPushButton::clicked, this, &CropDialog::fitToWindow);
     connect(oneToOneButton, &QPushButton::clicked, this, &CropDialog::oneToOne);
     
-    // Kết nối tín hiệu cho các nút mới
     connect(okButton, &QPushButton::clicked, this, &QDialog::accept);
     connect(cancelButton, &QPushButton::clicked, this, &QDialog::reject);
     connect(exportButton, &QPushButton::clicked, this, &CropDialog::exportImage);
     
-    mainLayout->addLayout(buttonLayout); // Thêm layout nút vào layout chính
+    mainLayout->addLayout(buttonLayout);
 }
 
 void CropDialog::onAspectRatioChanged(int id, bool checked)
@@ -498,11 +576,18 @@ void CropDialog::updateScaleLabel(double scale)
     m_scaleLabel->setText(QString::number(qRound(scale * 100)) + "%");
 }
 
+void CropDialog::updateSizeLabel(const QSize &size)
+{
+    m_sizeLabel->setText(QString("%1x%2").arg(size.width()).arg(size.height()));
+}
+
+
 void CropDialog::fitToWindow()
 {
     if(m_currentImage.isNull()) return;
-    double w_ratio = (double)m_scrollArea->width() / (m_currentImage.width() + 10);
-    double h_ratio = (double)m_scrollArea->height() / (m_currentImage.height() + 10);
+    // THAY ĐỔI: Thêm 0.95 để tạo padding
+    double w_ratio = (double)(m_scrollArea->width() * 0.95) / (m_currentImage.width());
+    double h_ratio = (double)(m_scrollArea->height() * 0.95) / (m_currentImage.height());
     double scale = qMin(w_ratio, h_ratio);
     m_cropArea->setScale(scale);
 }
@@ -523,7 +608,6 @@ void CropDialog::applyCrop()
     QImage newImage = oldImage.copy(selection);
     m_undoStack->push(new ApplyCropCommand(&m_currentImage, m_cropArea, oldImage, newImage));
 
-    // Tự động căn giữa và thu phóng lại ảnh sau khi cắt
     fitToWindow();
 }
 
